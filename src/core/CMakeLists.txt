@@ -1,6 +1,7 @@
 # Core: pure, portable C++ (no Win32 includes). Everything else depends on this.
 add_library(focus_core STATIC
   SessionManager.cpp
+  Statistics.cpp
   Timer.cpp
 )
 # Include root is src/, so other code writes #include "core/Timer.h".
