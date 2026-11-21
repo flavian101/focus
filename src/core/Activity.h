@@ -1,5 +1,6 @@
 #pragma once
 #include <cstddef>
+#include <string>
 #include <string_view>
 
 namespace focus {
@@ -14,7 +15,7 @@ enum class ActivityCategory {
 
 inline constexpr std::size_t kActivityCategoryCount = 4;
 
-constexpr std::string_view toString(ActivityCategory c) {
+constexpr std::string_view categoryName(ActivityCategory c) {
     switch (c) {
         case ActivityCategory::Focus:       return "focus";
         case ActivityCategory::Neutral:     return "neutral";
@@ -23,5 +24,12 @@ constexpr std::string_view toString(ActivityCategory c) {
     }
     return "neutral";
 }
+
+// What the OS says is in front of the user right now, as plain UTF-8 text.
+// Platform code fills this in; services decide what it means. Core never touches Win32.
+struct ForegroundWindow {
+    std::string processName;  // e.g. "Code.exe"
+    std::string title;        // e.g. "main.cpp - focus - Visual Studio Code"
+};
 
 }  // namespace focus
