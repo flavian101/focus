@@ -1,5 +1,6 @@
 add_executable(focus_tests
   test_main.cpp
+  test_session_manager.cpp
   test_timer.cpp
 )
 target_link_libraries(focus_tests PRIVATE focus_core doctest::doctest)
