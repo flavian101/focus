@@ -1,0 +1,10 @@
+# focus_enable_warnings(<target>)
+# One place to decide how strict the compiler is, so every module gets the same rules.
+function(focus_enable_warnings target)
+  if(MSVC)
+    # /utf-8: treat source files as UTF-8 (otherwise MSVC guesses from the system code page)
+    target_compile_options(${target} PRIVATE /W4 /permissive- /utf-8)
+  else()
+    target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
+  endif()
+endfunction()

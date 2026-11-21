@@ -1,0 +1,14 @@
+# Build output
+/build/
+/out/
+/cmake-build-*/
+
+# IDE / editor
+.vs/
+.vscode/
+.idea/
+CMakeUserPresets.json
+
+# Local data created while testing
+*.db
+*.db-journal
