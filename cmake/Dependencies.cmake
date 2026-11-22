@@ -16,3 +16,28 @@ if(FOCUS_BUILD_TESTS)
   )
   FetchContent_MakeAvailable(doctest)
 endif()
+
+# SQLite: either download the official "amalgamation" (one sqlite3.c file) and compile it
+# ourselves, or use a copy already installed on the machine (vcpkg, apt, ...).
+option(FOCUS_FETCH_SQLITE "Download the SQLite amalgamation (OFF = use find_package(SQLite3))" ON)
+
+if(FOCUS_FETCH_SQLITE)
+  FetchContent_Declare(
+    sqlite_amalgamation
+    URL https://www.sqlite.org/2024/sqlite-amalgamation-3450100.zip
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+  )
+  FetchContent_MakeAvailable(sqlite_amalgamation)  # the zip has no CMakeLists.txt, so this only downloads
+
+  add_library(focus_sqlite3 STATIC ${sqlite_amalgamation_SOURCE_DIR}/sqlite3.c)
+  target_include_directories(focus_sqlite3 PUBLIC ${sqlite_amalgamation_SOURCE_DIR})
+  if(UNIX)
+    target_link_libraries(focus_sqlite3 PUBLIC dl pthread)
+  endif()
+  add_library(SQLite3::SQLite3 ALIAS focus_sqlite3)  # same name find_package gives us in CMake 4
+else()
+  find_package(SQLite3 REQUIRED)
+  if(NOT TARGET SQLite3::SQLite3)  # older CMake only knows the SQLite::SQLite3 spelling
+    add_library(SQLite3::SQLite3 ALIAS SQLite::SQLite3)
+  endif()
+endif()
