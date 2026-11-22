@@ -12,8 +12,8 @@ constexpr std::size_t idx(ActivityCategory c) { return static_cast<std::size_t>(
 std::int64_t SessionRepository::insert(const SessionSummary& s) {
     auto st = db_.prepare(
         "INSERT INTO sessions (goal, approach, planned_s, active_s, started_at, ended_at, outcome,"
-        " ai_budget, ai_visits, ai_manual, focus_s, neutral_s, distraction_s, ai_s)"
-        " VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14);");
+        " ai_budget, ai_visits, ai_manual, focus_s, neutral_s, distraction_s, ai_s, away_s)"
+        " VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15);");
     st.bind(1, s.goal)
         .bind(2, s.approach)
         .bind(3, s.plannedSeconds)
@@ -27,7 +27,8 @@ std::int64_t SessionRepository::insert(const SessionSummary& s) {
         .bind(11, s.secondsByCategory[idx(ActivityCategory::Focus)])
         .bind(12, s.secondsByCategory[idx(ActivityCategory::Neutral)])
         .bind(13, s.secondsByCategory[idx(ActivityCategory::Distraction)])
-        .bind(14, s.secondsByCategory[idx(ActivityCategory::AiAssistant)]);
+        .bind(14, s.secondsByCategory[idx(ActivityCategory::AiAssistant)])
+        .bind(15, s.secondsByCategory[idx(ActivityCategory::Away)]);
     st.run();
     return db_.lastInsertRowId();
 }
@@ -35,7 +36,7 @@ std::int64_t SessionRepository::insert(const SessionSummary& s) {
 std::vector<SessionSummary> SessionRepository::startedSince(std::int64_t unixSeconds) {
     auto st = db_.prepare(
         "SELECT id, goal, approach, planned_s, active_s, started_at, ended_at, outcome,"
-        " ai_budget, ai_visits, ai_manual, focus_s, neutral_s, distraction_s, ai_s"
+        " ai_budget, ai_visits, ai_manual, focus_s, neutral_s, distraction_s, ai_s, away_s"
         " FROM sessions WHERE started_at >= ?1 ORDER BY started_at;");
     st.bind(1, unixSeconds);
 
@@ -57,6 +58,7 @@ std::vector<SessionSummary> SessionRepository::startedSince(std::int64_t unixSec
         s.secondsByCategory[idx(ActivityCategory::Neutral)]     = st.columnInt(12);
         s.secondsByCategory[idx(ActivityCategory::Distraction)] = st.columnInt(13);
         s.secondsByCategory[idx(ActivityCategory::AiAssistant)] = st.columnInt(14);
+        s.secondsByCategory[idx(ActivityCategory::Away)]        = st.columnInt(15);
         out.push_back(std::move(s));
     }
     return out;

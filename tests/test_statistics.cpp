@@ -73,3 +73,11 @@ TEST_CASE("invalid check-ins are ignored and tags are counted case-insensitively
     CHECK(r.topTags[0].first == "stuck");
     CHECK(r.topTags[0].second == 2);
 }
+
+TEST_CASE("away time is reported separately and left out of the AI share") {
+    SessionSummary s = session(1, SessionOutcome::Completed, 1500, 0, std::nullopt, 600, 200);
+    s.secondsByCategory[static_cast<std::size_t>(ActivityCategory::Away)] = 700;
+    auto r = summarize({s}, {});
+    CHECK(r.awaySeconds == 700);
+    CHECK(r.aiTimeShare == doctest::Approx(200.0 / 800.0));  // present time = 600 + 200
+}

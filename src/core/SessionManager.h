@@ -73,6 +73,11 @@ public:
     void recordActivity(ActivityCategory category, Clock::time_point now);
     void logManualAiUse(Clock::time_point now);
 
+    // "The user has had no keyboard/mouse input for idleFor." Call it instead of recordActivity
+    // while idle. The whole idle stretch is moved to the Away category, even the part that was
+    // already credited before we knew they had left.
+    void recordAway(std::chrono::seconds idleFor, Clock::time_point now);
+
     SessionState state() const { return state_; }
     bool isActive() const { return state_ != SessionState::Idle; }
     std::chrono::seconds remaining(Clock::time_point now) const { return timer_.remaining(now); }
@@ -80,6 +85,7 @@ public:
 
 private:
     void creditElapsed(Clock::time_point now);
+    void refreshSummarySeconds();
     void checkAiBudget();
     void finish(SessionOutcome outcome, Clock::time_point now);
     void emit(SessionEvent::Type type) const;
@@ -93,6 +99,7 @@ private:
     // seconds for the summary. Truncating every sample would slowly lose time.
     std::array<Clock::duration, kActivityCategoryCount> spent_{};
     ActivityCategory lastCategory_ = ActivityCategory::Neutral;
+    ActivityCategory categoryBeforeAway_ = ActivityCategory::Neutral;  // so coming back is not a "new" AI visit
     Clock::time_point lastSampleAt_{};
     bool budgetExceededEmitted_ = false;
 };

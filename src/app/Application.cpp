@@ -7,6 +7,7 @@
 #include "app/Console.h"
 #include "app/Report.h"
 #include "app/TimeUtil.h"
+#include "platform/IdleDetection.h"
 #include "platform/WindowDetection.h"
 #include "storage/CheckInRepository.h"
 #include "storage/SessionRepository.h"
@@ -104,9 +105,14 @@ void Application::onTick() {
 
     if (now - lastSampleAt_ >= config_.activitySampleInterval) {
         lastSampleAt_ = now;
-        const auto foreground = win::queryForegroundWindow();
-        // Only the category is kept. The window title is dropped right here.
-        session_.recordActivity(foreground ? classifier_.classify(*foreground) : ActivityCategory::Neutral, now);
+        const auto idle = win::idleDuration();
+        if (idle >= config_.awayThreshold) {
+            session_.recordAway(idle, now);  // nobody is there: the window in front does not matter
+        } else {
+            const auto foreground = win::queryForegroundWindow();
+            // Only the category is kept. The window title is dropped right here.
+            session_.recordActivity(foreground ? classifier_.classify(*foreground) : ActivityCategory::Neutral, now);
+        }
     }
     session_.tick(now);  // may complete the session, which quits the message loop
 

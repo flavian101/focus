@@ -6,6 +6,7 @@ add_library(focus_platform STATIC
   WindowDetection.cpp
   SystemTray.cpp
   Hotkeys.cpp
+  IdleDetection.cpp
 )
 target_link_libraries(focus_platform PUBLIC focus_core PRIVATE user32 shell32 ole32)
 target_compile_definitions(focus_platform PUBLIC

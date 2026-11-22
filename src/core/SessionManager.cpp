@@ -23,6 +23,7 @@ bool SessionManager::start(SessionPlan plan, Clock::time_point now) {
 
     spent_.fill(Clock::duration::zero());
     lastCategory_         = ActivityCategory::Neutral;
+    categoryBeforeAway_   = ActivityCategory::Neutral;
     lastSampleAt_         = now;
     budgetExceededEmitted_ = false;
 
@@ -66,12 +67,34 @@ void SessionManager::recordActivity(ActivityCategory category, Clock::time_point
     creditElapsed(now);
 
     // A "visit" is a switch INTO an AI tool, not every sample spent inside it.
-    if (category == ActivityCategory::AiAssistant && lastCategory_ != ActivityCategory::AiAssistant) {
+    // Walking away and coming back to the same AI window is not a new visit.
+    const auto before = lastCategory_ == ActivityCategory::Away ? categoryBeforeAway_ : lastCategory_;
+    if (category == ActivityCategory::AiAssistant && before != ActivityCategory::AiAssistant) {
         ++summary_.aiVisits;
         emit(SessionEvent::Type::AiVisit);
         checkAiBudget();
     }
     lastCategory_ = category;
+}
+
+void SessionManager::recordAway(std::chrono::seconds idleFor, Clock::time_point now) {
+    if (state_ != SessionState::Focusing) return;
+    creditElapsed(now);  // settle everything up to now into the current category first
+
+    if (lastCategory_ != ActivityCategory::Away) {
+        // First sample of this absence. Without input the foreground window cannot have changed,
+        // so the whole idle stretch was spent in lastCategory_. Move it over, capped at what that
+        // category actually has (the idle period may have begun before the session did).
+        const auto from = static_cast<std::size_t>(lastCategory_);
+        const auto to   = static_cast<std::size_t>(ActivityCategory::Away);
+        const auto move = std::min(std::chrono::duration_cast<Clock::duration>(idleFor), spent_[from]);
+        spent_[from] -= move;
+        spent_[to] += move;
+        categoryBeforeAway_ = lastCategory_;
+        lastCategory_       = ActivityCategory::Away;
+        refreshSummarySeconds();
+    }
+    // Later samples need no move: creditElapsed() already credits Away while lastCategory_ is Away.
 }
 
 void SessionManager::logManualAiUse(Clock::time_point /*now*/) {
@@ -83,11 +106,15 @@ void SessionManager::logManualAiUse(Clock::time_point /*now*/) {
 
 void SessionManager::creditElapsed(Clock::time_point now) {
     const auto delta = std::max(now - lastSampleAt_, Clock::duration::zero());
-    const auto idx   = static_cast<std::size_t>(lastCategory_);
-    spent_[idx] += delta;
-    summary_.secondsByCategory[idx] =
-        std::chrono::duration_cast<std::chrono::seconds>(spent_[idx]).count();
+    spent_[static_cast<std::size_t>(lastCategory_)] += delta;
+    refreshSummarySeconds();
     lastSampleAt_ = now;
+}
+
+void SessionManager::refreshSummarySeconds() {
+    for (std::size_t i = 0; i < spent_.size(); ++i) {
+        summary_.secondsByCategory[i] = std::chrono::duration_cast<std::chrono::seconds>(spent_[i]).count();
+    }
 }
 
 void SessionManager::checkAiBudget() {

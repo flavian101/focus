@@ -16,7 +16,8 @@ struct StatsReport {
     std::int64_t focusSeconds = 0;       // sum of active time across sessions
     double aiVisitsPerSession = 0.0;
     int sessionsOverAiBudget = 0;
-    double aiTimeShare = 0.0;            // 0..1: fraction of tracked time spent in AI tools
+    double aiTimeShare = 0.0;            // 0..1: fraction of time you were PRESENT that was spent in AI tools
+    std::int64_t awaySeconds = 0;        // time with no keyboard/mouse input
 
     std::optional<double> avgMoodBefore;
     std::optional<double> avgMoodAfter;

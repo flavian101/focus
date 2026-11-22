@@ -11,9 +11,10 @@ enum class ActivityCategory {
     Neutral,      // anything we have no opinion about
     Distraction,  // feeds, video, games
     AiAssistant,  // chat assistants (ChatGPT, Claude, Gemini, ...)
+    Away,         // no keyboard/mouse input for a while (set from idle time, not from a window)
 };
 
-inline constexpr std::size_t kActivityCategoryCount = 4;
+inline constexpr std::size_t kActivityCategoryCount = 5;
 
 constexpr std::string_view categoryName(ActivityCategory c) {
     switch (c) {
@@ -21,6 +22,7 @@ constexpr std::string_view categoryName(ActivityCategory c) {
         case ActivityCategory::Neutral:     return "neutral";
         case ActivityCategory::Distraction: return "distraction";
         case ActivityCategory::AiAssistant: return "ai";
+        case ActivityCategory::Away:        return "away";
     }
     return "neutral";
 }
