@@ -24,6 +24,7 @@ using Args = std::vector<std::string>;
 
 void printUsage() {
     std::cout << "Usage:\n"
+                 "  focus                      (same as 'focus start': asks you for everything)\n"
                  "  focus start [--goal TEXT] [--approach TEXT] [--minutes N] [--ai-budget N|none] [--no-reminders]\n"
                  "  focus stats [--days N]\n"
                  "  focus help\n";
@@ -94,8 +95,12 @@ int commandStats(focus::Database& db, const Args& args) {
     return 0;
 }
 
-int run(const Args& args) {
-    if (args.empty() || args[0] == "help" || args[0] == "--help") {
+int run(Args args) {
+    // Double-clicking the exe or pressing F5 in Visual Studio passes no arguments.
+    // Going straight to an interactive session is more useful than printing a usage text and exiting.
+    if (args.empty()) args.push_back("start");
+
+    if (args[0] == "help" || args[0] == "--help") {
         printUsage();
         return 0;
     }

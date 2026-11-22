@@ -35,6 +35,21 @@ install a newer one from cmake.org or use the `ninja` preset from an
 If your network blocks sqlite.org, install SQLite another way (e.g. vcpkg) and configure with
 `-DFOCUS_FETCH_SQLITE=OFF`.
 
+## Run it
+
+Visual Studio: set `focus.exe` as the startup item and press F5. With no arguments it asks for
+your goal interactively (same as `focus start`).
+
+PowerShell does not run programs from the current folder by name, so from the build folder use
+`.\focus.exe start`. To run `focus` from anywhere, install it and put it on your PATH:
+
+```
+cmake --install build\vs2026 --config Release --prefix "$env:LOCALAPPDATA\Programs\Focus"
+[Environment]::SetEnvironmentVariable("Path", $env:Path + ";$env:LOCALAPPDATA\Programs\Focus\bin", "User")
+```
+
+Open a new terminal afterwards, then `focus start` works anywhere.
+
 ## Use
 
 ```
