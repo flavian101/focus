@@ -8,6 +8,7 @@
 #include "app/Report.h"
 #include "app/TimeUtil.h"
 #include "platform/IdleDetection.h"
+#include "services/Reminders.h"
 #include "platform/WindowDetection.h"
 #include "storage/CheckInRepository.h"
 #include "storage/SessionRepository.h"
@@ -51,7 +52,11 @@ std::string formatClock(std::chrono::seconds s) {
 Application::Application(Database& db, Configuration config)
     : db_(db),
       config_(config),
-      session_([this](const SessionEvent& e) { onSessionEvent(e); }) {}
+      session_([this](const SessionEvent& e) { onSessionEvent(e); }) {
+    if (config_.remindersEnabled) {
+        for (auto& reminder : defaultReminders()) scheduler_.add(std::move(reminder));
+    }
+}
 
 Application::~Application() {
     hotkeys_.reset();  // unregister hotkeys and remove the tray icon BEFORE the window goes away
@@ -106,7 +111,8 @@ void Application::onTick() {
     if (now - lastSampleAt_ >= config_.activitySampleInterval) {
         lastSampleAt_ = now;
         const auto idle = win::idleDuration();
-        if (idle >= config_.awayThreshold) {
+        present_        = idle < config_.awayThreshold;
+        if (!present_) {
             session_.recordAway(idle, now);  // nobody is there: the window in front does not matter
         } else {
             const auto foreground = win::queryForegroundWindow();
@@ -115,6 +121,12 @@ void Application::onTick() {
         }
     }
     session_.tick(now);  // may complete the session, which quits the message loop
+
+    // Reminders only make sense while you are working AND at your desk. If one comes due while
+    // you are away it stays due, and shows up the moment you are back.
+    if (session_.state() == SessionState::Focusing && present_ && tray_) {
+        for (const auto& reminder : scheduler_.collectDue(now)) tray_->notify(reminder.title, reminder.message);
+    }
 
     if (session_.isActive() && tray_) tray_->setTooltip(tooltip());
 }
@@ -150,12 +162,15 @@ void Application::onSessionEvent(const SessionEvent& event) {
 
     switch (event.type) {
         case Type::Started:
+            scheduler_.start(SessionManager::Clock::now());
             notify("Focus started", s.goal);
             break;
         case Type::Paused:
+            scheduler_.pause(SessionManager::Clock::now());
             std::cout << "  paused\n";
             break;
         case Type::Resumed:
+            scheduler_.resume(SessionManager::Clock::now());
             std::cout << "  resumed\n";
             break;
         case Type::AiVisit: {
@@ -169,10 +184,12 @@ void Application::onSessionEvent(const SessionEvent& event) {
                    "Write down what you've tried. Is this a real blocker, or are you avoiding the hard part?");
             break;
         case Type::Completed:
+            scheduler_.stop();
             notify("Session complete", "Nice work. Take a short break.");
             PostQuitMessage(0);  // ends the message loop in runSession()
             break;
         case Type::Abandoned:
+            scheduler_.stop();
             PostQuitMessage(0);
             break;
     }

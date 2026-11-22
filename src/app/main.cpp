@@ -24,7 +24,7 @@ using Args = std::vector<std::string>;
 
 void printUsage() {
     std::cout << "Usage:\n"
-                 "  focus start [--goal TEXT] [--approach TEXT] [--minutes N] [--ai-budget N|none]\n"
+                 "  focus start [--goal TEXT] [--approach TEXT] [--minutes N] [--ai-budget N|none] [--no-reminders]\n"
                  "  focus stats [--days N]\n"
                  "  focus help\n";
 }
@@ -35,6 +35,10 @@ std::optional<std::string> option(const Args& args, const std::string& name) {
         if (args[i] == name) return args[i + 1];
     }
     return std::nullopt;
+}
+
+bool hasFlag(const Args& args, const std::string& name) {
+    return std::find(args.begin(), args.end(), name) != args.end();
 }
 
 std::optional<int> intOption(const Args& args, const std::string& name) {
@@ -51,7 +55,8 @@ std::optional<int> intOption(const Args& args, const std::string& name) {
 }
 
 int commandStart(focus::Database& db, const Args& args) {
-    const auto config = focus::Configuration::defaults();
+    auto config             = focus::Configuration::defaults();
+    config.remindersEnabled = !hasFlag(args, "--no-reminders");
 
     focus::SessionPlan plan;
     plan.goal = option(args, "--goal").value_or("");

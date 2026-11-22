@@ -9,6 +9,8 @@ Each session is a small contract with yourself:
 2. Do a 10-second mood/energy check-in.
 3. Work. Focus watches which kind of window is in front (editor, distraction, AI assistant),
    counts AI visits against your budget, and nudges you with a notification when you go over.
+   Time with no keyboard/mouse input for 5 minutes is counted as "away", not focus, and
+   Eye Care (every 20 min), Stretch (45 min) and Water (60 min) reminders pop up while you work.
 4. Check in again. Everything is saved locally, and `focus stats` shows trends.
 
 Everything stays on your machine (`%LOCALAPPDATA%\Focus\focus.db`). Window titles are used to
@@ -36,7 +38,7 @@ If your network blocks sqlite.org, install SQLite another way (e.g. vcpkg) and c
 ## Use
 
 ```
-focus start [--goal TEXT] [--approach TEXT] [--minutes N] [--ai-budget N|none]
+focus start [--goal TEXT] [--approach TEXT] [--minutes N] [--ai-budget N|none] [--no-reminders]
 focus stats [--days N]
 ```
 
@@ -64,7 +66,7 @@ which is why it can be unit-tested without a clock, a window, or a database.
 ## Roadmap
 
 - Dashboard / Settings UI (Dear ImGui on Direct3D 11)
-- Scheduler (breaks, long breaks) and idle detection (don't count time away)
-- Services from structure.md: Hydration, Stretch, Eye Care, Achievements
+- Break flow after a session (short/long breaks) on top of the Scheduler
+- Achievements, and reminders that run all day (needs a background mode)
 - Storage/Preferences: user-editable rules and defaults
 - Weekly review: "what was I doing when my mood dropped?"

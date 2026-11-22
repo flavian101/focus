@@ -11,6 +11,7 @@ struct Configuration {
     int defaultAiBudget = 3;                         // AI visits allowed per session unless overridden
     std::chrono::seconds activitySampleInterval{2};  // how often we look at the foreground window
     std::chrono::seconds awayThreshold{300};         // no input for this long = you are away
+    bool remindersEnabled = true;                    // hydration / stretch / eye-care nudges during a session
 
     static Configuration defaults() { return {}; }
 };
