@@ -29,6 +29,9 @@ if(FOCUS_FETCH_SQLITE)
   )
   FetchContent_MakeAvailable(sqlite_amalgamation)  # the zip has no CMakeLists.txt, so this only downloads
 
+  # Our project() line only enables C++, but sqlite3.c is C. Without a C compiler enabled,
+  # CMake cannot even tell how to link the target ("can not determine linker language").
+  enable_language(C)
   add_library(focus_sqlite3 STATIC ${sqlite_amalgamation_SOURCE_DIR}/sqlite3.c)
   target_include_directories(focus_sqlite3 PUBLIC ${sqlite_amalgamation_SOURCE_DIR})
   if(UNIX)
