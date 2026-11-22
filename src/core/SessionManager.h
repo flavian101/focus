@@ -88,7 +88,7 @@ private:
     void refreshSummarySeconds();
     void checkAiBudget();
     void finish(SessionOutcome outcome, Clock::time_point now);
-    void emit(SessionEvent::Type type) const;
+    void notifyListener(SessionEvent::Type type) const;
 
     Listener listener_;
     Timer timer_;

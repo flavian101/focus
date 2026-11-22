@@ -29,7 +29,7 @@ bool SessionManager::start(SessionPlan plan, Clock::time_point now) {
 
     timer_.start(std::chrono::duration_cast<Timer::Seconds>(plan.duration), now);
     state_ = SessionState::Focusing;
-    emit(SessionEvent::Type::Started);
+    notifyListener(SessionEvent::Type::Started);
     return true;
 }
 
@@ -38,7 +38,7 @@ void SessionManager::pause(Clock::time_point now) {
     creditElapsed(now);  // settle up before the clock stops counting
     timer_.pause(now);
     state_ = SessionState::Paused;
-    emit(SessionEvent::Type::Paused);
+    notifyListener(SessionEvent::Type::Paused);
 }
 
 void SessionManager::resume(Clock::time_point now) {
@@ -46,7 +46,7 @@ void SessionManager::resume(Clock::time_point now) {
     timer_.resume(now);
     lastSampleAt_ = now;  // time spent paused is credited to nobody
     state_        = SessionState::Focusing;
-    emit(SessionEvent::Type::Resumed);
+    notifyListener(SessionEvent::Type::Resumed);
 }
 
 void SessionManager::tick(Clock::time_point now) {
@@ -71,7 +71,7 @@ void SessionManager::recordActivity(ActivityCategory category, Clock::time_point
     const auto before = lastCategory_ == ActivityCategory::Away ? categoryBeforeAway_ : lastCategory_;
     if (category == ActivityCategory::AiAssistant && before != ActivityCategory::AiAssistant) {
         ++summary_.aiVisits;
-        emit(SessionEvent::Type::AiVisit);
+        notifyListener(SessionEvent::Type::AiVisit);
         checkAiBudget();
     }
     lastCategory_ = category;
@@ -100,7 +100,7 @@ void SessionManager::recordAway(std::chrono::seconds idleFor, Clock::time_point 
 void SessionManager::logManualAiUse(Clock::time_point /*now*/) {
     if (!isActive()) return;
     ++summary_.aiManualLogs;
-    emit(SessionEvent::Type::AiVisit);
+    notifyListener(SessionEvent::Type::AiVisit);
     checkAiBudget();
 }
 
@@ -120,7 +120,7 @@ void SessionManager::refreshSummarySeconds() {
 void SessionManager::checkAiBudget() {
     if (summary_.aiBudget && summary_.aiTotal() > *summary_.aiBudget && !budgetExceededEmitted_) {
         budgetExceededEmitted_ = true;  // warn once, not on every later visit
-        emit(SessionEvent::Type::AiBudgetExceeded);
+        notifyListener(SessionEvent::Type::AiBudgetExceeded);
     }
 }
 
@@ -133,11 +133,11 @@ void SessionManager::finish(SessionOutcome outcome, Clock::time_point now) {
 
     timer_.stop();
     state_ = SessionState::Idle;  // summary_ stays readable until the next start()
-    emit(outcome == SessionOutcome::Completed ? SessionEvent::Type::Completed
+    notifyListener(outcome == SessionOutcome::Completed ? SessionEvent::Type::Completed
                                               : SessionEvent::Type::Abandoned);
 }
 
-void SessionManager::emit(SessionEvent::Type type) const {
+void SessionManager::notifyListener(SessionEvent::Type type) const {
     if (listener_) listener_(SessionEvent{type});
 }
 
