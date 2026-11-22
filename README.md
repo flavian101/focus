@@ -16,14 +16,19 @@ decide a category and are then discarded; only category totals are stored.
 
 ## Build (Windows)
 
-Requirements: Visual Studio 2022 (Desktop development with C++) and CMake 3.24+.
+Requirements: Visual Studio 2026 (Desktop development with C++) and **CMake 4.2 or newer**
+(the first version that knows the "Visual Studio 18 2026" generator; check with `cmake --version`).
 
 ```
-cmake --preset vs2022
-cmake --build --preset vs2022-debug
-ctest --preset vs2022-debug
-build\vs2022\src\app\Debug\focus.exe start
+cmake --preset vs2026
+cmake --build --preset vs2026-debug
+ctest --preset vs2026-debug
+build\vs2026\src\app\Debug\focus.exe start
 ```
+
+On Visual Studio 2022, use the `vs2022` presets instead. If your CMake is older than 4.2, either
+install a newer one from cmake.org or use the `ninja` preset from an
+"x64 Native Tools" developer prompt.
 
 If your network blocks sqlite.org, install SQLite another way (e.g. vcpkg) and configure with
 `-DFOCUS_FETCH_SQLITE=OFF`.
