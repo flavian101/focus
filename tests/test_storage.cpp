@@ -158,3 +158,18 @@ TEST_CASE("upgrading a v1 database keeps its data and gives new columns a defaul
     CHECK(rows[0].goal == "written by v1");
     CHECK(rows[0].secondsIn(ActivityCategory::Away) == 0);  // DEFAULT 0
 }
+
+TEST_CASE("recent() returns the newest sessions first and respects the limit") {
+    auto db = freshDb();
+    SessionRepository repo(db);
+    for (int i = 1; i <= 5; ++i) {
+        auto s      = sampleSession();
+        s.goal      = "session " + std::to_string(i);
+        s.startedAt = 1000 * i;
+        repo.insert(s);
+    }
+    auto rows = repo.recent(3);
+    REQUIRE(rows.size() == 3);
+    CHECK(rows[0].goal == "session 5");
+    CHECK(rows[2].goal == "session 3");
+}
