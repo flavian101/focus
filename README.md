@@ -35,7 +35,27 @@ install a newer one from cmake.org or use the `ninja` preset from an
 If your network blocks sqlite.org, install SQLite another way (e.g. vcpkg) and configure with
 `-DFOCUS_FETCH_SQLITE=OFF`.
 
-## Run it
+## The Qt window (optional)
+
+`focus_ui` is a Qt Quick front end: dashboard with animated summary cards and a weekly chart,
+a live session screen with a progress ring and AI-budget tracker, a check-in sheet, a tray icon,
+and light/dark themes with a choice of accent colours. It uses the same database as the console app.
+
+1. Install Qt 6 with the Qt Online Installer and tick **Qt 6.x > MSVC 2022 64-bit**
+   (that kit works with Visual Studio 2026).
+2. Build with the UI switched on, pointing CMake at your Qt kit (adjust the version and path):
+
+```
+cmake --preset vs2026 -DFOCUS_BUILD_UI=ON -DCMAKE_PREFIX_PATH=C:/Qt/6.12.0/msvc2022_64
+cmake --build --preset vs2026-release
+build\vs2026\src\ui\Release\focus_ui.exe
+```
+
+The build runs `windeployqt` so the exe starts without Qt on your PATH. `ctest --preset vs2026-debug`
+also runs `ui_self_test`, which loads the real QML, plays through a session and writes screenshots to
+`build\vs2026\ui-screenshots`.
+
+## Run the console app
 
 Visual Studio: set `focus.exe` as the startup item and press F5. With no arguments it asks for
 your goal interactively (same as `focus start`).
@@ -80,7 +100,7 @@ which is why it can be unit-tested without a clock, a window, or a database.
 
 ## Roadmap
 
-- Dashboard / Settings UI (Dear ImGui on Direct3D 11)
+- Global hotkeys in the Qt window (the tray menu covers them for now), a settings page, custom icon
 - Break flow after a session (short/long breaks) on top of the Scheduler
 - Achievements, and reminders that run all day (needs a background mode)
 - Storage/Preferences: user-editable rules and defaults
