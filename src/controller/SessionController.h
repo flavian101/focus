@@ -10,6 +10,8 @@
 #include "core/ActivitySource.h"
 #include "core/CheckIn.h"
 #include "core/Configuration.h"
+#include "core/DayPlan.h"
+#include "core/Task.h"
 #include "core/Scheduler.h"
 #include "core/SessionManager.h"
 #include "core/Statistics.h"
@@ -21,6 +23,13 @@ namespace focus {
 struct Notification {
     std::string title;
     std::string body;
+};
+
+// The outcome of a plan edit: either it worked, or `message` says why not, in words for the user.
+struct TaskResult {
+    bool ok = false;
+    std::string message;
+    std::int64_t id = 0;  // the task that was created or changed
 };
 
 enum class Phase {
@@ -70,11 +79,24 @@ public:
     void submitAfterCheckIn(CheckIn after);
     void skipAfterCheckIn();
 
+    // ---- the day plan. `day` is the caller's local date as "YYYY-MM-DD". ----------------
+    TaskResult addTask(const std::string& day, std::string title, Priority priority, int estimateMinutes);
+    TaskResult setTaskPriority(std::int64_t id, Priority priority);
+    void setTaskStatus(std::int64_t id, TaskStatus status);
+    // Moves unfinished tasks from earlier days onto `today`. If that would break the must-do
+    // limit, the extra ones come over as "Should". Returns how many tasks moved.
+    int carryOverUnfinished(const std::string& today);
+    int unfinishedBefore(const std::string& day);  // how many tasks carryOverUnfinished would move
+    std::vector<Task> tasksFor(const std::string& day);
+    std::optional<Task> task(std::int64_t id);
+    PlanSummary planFor(const std::string& day);
+
     ControllerSnapshot snapshot(Clock::time_point now) const;
     StatsReport stats(int days);
     std::vector<SessionSummary> recentSessions(int limit);
 
     const Configuration& config() const { return config_; }
+    PlanRules planRules() const;
 
 private:
     void onSessionEvent(const SessionEvent& event);

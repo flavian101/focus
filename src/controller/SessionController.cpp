@@ -5,6 +5,7 @@
 #include "services/Reminders.h"
 #include "storage/CheckInRepository.h"
 #include "storage/SessionRepository.h"
+#include "storage/TaskRepository.h"
 
 namespace focus {
 
@@ -34,6 +35,9 @@ bool SessionController::start(SessionPlan plan, CheckIn before, Clock::time_poin
     if (!before.isValid()) return false;
 
     eventNow_ = now;
+    // A task id that does not exist must not reach the database later, where the foreign key
+    // would reject the finished session and lose it. Check now and start unlinked instead.
+    if (plan.taskId && !TaskRepository(db_).find(*plan.taskId)) plan.taskId.reset();
     if (!session_.start(std::move(plan), now)) return false;
     before_          = std::move(before);
     awaitingCheckIn_ = false;  // starting again simply drops a check-in the user never answered
@@ -152,6 +156,85 @@ void SessionController::submitAfterCheckIn(CheckIn after) {
 }
 
 void SessionController::skipAfterCheckIn() { awaitingCheckIn_ = false; }
+
+PlanRules SessionController::planRules() const {
+    PlanRules rules;
+    rules.maxMust         = config_.maxMustPerDay;
+    rules.capacityMinutes = static_cast<int>(config_.dailyFocusCapacity.count());
+    return rules;
+}
+
+TaskResult SessionController::addTask(const std::string& day, std::string title, Priority priority, int estimateMinutes) {
+    TaskRepository repo(db_);
+    Task t;
+    t.title           = std::move(title);
+    t.priority        = priority;
+    t.estimateMinutes = estimateMinutes;
+    t.day             = day;
+    t.createdAt       = unixNow();
+
+    const auto check = checkTask(repo.forDay(day), t, planRules());
+    if (check != PlanCheck::Ok) return TaskResult{false, describe(check, planRules()), 0};
+    return TaskResult{true, {}, repo.insert(t)};
+}
+
+TaskResult SessionController::setTaskPriority(std::int64_t id, Priority priority) {
+    TaskRepository repo(db_);
+    auto existing = repo.find(id);
+    if (!existing) return TaskResult{false, "That task no longer exists.", id};
+
+    Task changed   = *existing;
+    changed.priority = priority;
+    const auto check = checkTask(repo.forDay(existing->day), changed, planRules());
+    if (check != PlanCheck::Ok) return TaskResult{false, describe(check, planRules()), id};
+    repo.setPriority(id, priority);
+    return TaskResult{true, {}, id};
+}
+
+void SessionController::setTaskStatus(std::int64_t id, TaskStatus status) {
+    TaskRepository repo(db_);
+    auto existing = repo.find(id);
+    if (!existing) return;
+    // Bringing a dropped must-do back must not break the limit; quietly make it a Should if it would.
+    if (status != TaskStatus::Dropped && existing->status == TaskStatus::Dropped && existing->priority == Priority::Must) {
+        Task revived = *existing;
+        revived.status = status;
+        if (checkTask(repo.forDay(existing->day), revived, planRules()) == PlanCheck::TooManyMust) {
+            repo.setPriority(id, Priority::Should);
+        }
+    }
+    repo.setStatus(id, status, unixNow());
+}
+
+int SessionController::unfinishedBefore(const std::string& day) {
+    return static_cast<int>(TaskRepository(db_).unfinishedBefore(day).size());
+}
+
+int SessionController::carryOverUnfinished(const std::string& today) {
+    TaskRepository repo(db_);
+    const auto stale = repo.unfinishedBefore(today);
+    if (stale.empty()) return 0;
+
+    Transaction tx(db_);  // move them all, or none
+    for (const auto& old : stale) {  // already ordered oldest day first, then most important first
+        Task moved = old;
+        moved.day  = today;
+        if (checkTask(repo.forDay(today), moved, planRules()) == PlanCheck::TooManyMust) {
+            repo.setPriority(old.id, Priority::Should);  // today's must-do slots are full
+        }
+        repo.moveToDay(old.id, today);
+    }
+    tx.commit();
+    return static_cast<int>(stale.size());
+}
+
+std::vector<Task> SessionController::tasksFor(const std::string& day) { return TaskRepository(db_).forDay(day); }
+
+std::optional<Task> SessionController::task(std::int64_t id) { return TaskRepository(db_).find(id); }
+
+PlanSummary SessionController::planFor(const std::string& day) {
+    return summarizePlan(TaskRepository(db_).forDay(day), planRules());
+}
 
 ControllerSnapshot SessionController::snapshot(Clock::time_point now) const {
     ControllerSnapshot snap;

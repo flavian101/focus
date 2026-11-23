@@ -175,3 +175,87 @@ TEST_CASE("controller: recent sessions come back newest first") {
     REQUIRE(recent.size() == 2);
     CHECK(recent[0].goal == "goal 2");
 }
+
+// ------------------------------------------------------------------------------------ day plan
+
+TEST_CASE("plan: tasks are added in priority order and the must-do limit is explained") {
+    Rig rig;
+    CHECK(rig.controller.addTask("2026-11-23", "could do", Priority::Could, 20).ok);
+    for (int i = 0; i < 3; ++i) CHECK(rig.controller.addTask("2026-11-23", "must " + std::to_string(i), Priority::Must, 30).ok);
+
+    auto fourth = rig.controller.addTask("2026-11-23", "one too many", Priority::Must, 30);
+    CHECK_FALSE(fourth.ok);
+    CHECK(fourth.message.find("3 must-dos") != std::string::npos);
+
+    auto tasks = rig.controller.tasksFor("2026-11-23");
+    REQUIRE(tasks.size() == 4);
+    CHECK(tasks[0].priority == Priority::Must);
+    CHECK(tasks[3].priority == Priority::Could);
+
+    CHECK_FALSE(rig.controller.addTask("2026-11-23", "", Priority::Should, 20).ok);       // no name
+    CHECK_FALSE(rig.controller.addTask("2026-11-23", "x", Priority::Should, 0).ok);       // no estimate
+}
+
+TEST_CASE("plan: promoting to Must respects the limit; completing and dropping update the summary") {
+    Rig rig;
+    std::vector<std::int64_t> musts;
+    for (int i = 0; i < 3; ++i) musts.push_back(rig.controller.addTask("2026-11-23", "m" + std::to_string(i), Priority::Must, 30).id);
+    const auto should = rig.controller.addTask("2026-11-23", "s", Priority::Should, 60).id;
+
+    CHECK_FALSE(rig.controller.setTaskPriority(should, Priority::Must).ok);   // three musts already
+    rig.controller.setTaskStatus(musts[0], TaskStatus::Dropped);               // frees a slot
+    CHECK(rig.controller.setTaskPriority(should, Priority::Must).ok);
+
+    rig.controller.setTaskStatus(musts[1], TaskStatus::Done);
+    auto plan = rig.controller.planFor("2026-11-23");
+    CHECK(plan.total == 3);
+    CHECK(plan.done == 1);
+    CHECK(plan.dropped == 1);
+    CHECK(plan.mustDone == 1);
+}
+
+TEST_CASE("plan: a session linked to a task adds its time to the task") {
+    Rig rig;
+    const auto id = rig.controller.addTask("2026-11-23", "write the controller", Priority::Must, 25).id;
+
+    auto p   = plan();
+    p.taskId = id;
+    REQUIRE(rig.controller.start(p, mood(3, 3), t0));
+    rig.controller.tick(t0 + 25min);
+    rig.controller.skipAfterCheckIn();
+
+    auto tasks = rig.controller.tasksFor("2026-11-23");
+    REQUIRE(tasks.size() == 1);
+    CHECK(tasks[0].actualSeconds == 25 * 60);
+    CHECK(rig.controller.planFor("2026-11-23").actualMinutes == 25);
+}
+
+TEST_CASE("plan: a missing task id does not lose the session") {
+    Rig rig;
+    auto p   = plan();
+    p.taskId = 4242;  // no such task
+    REQUIRE(rig.controller.start(p, mood(3, 3), t0));
+    rig.controller.abandon(t0 + 1min);  // must not throw on a foreign-key failure
+    auto saved = rig.controller.recentSessions(1);
+    REQUIRE(saved.size() == 1);
+    CHECK_FALSE(saved[0].taskId.has_value());
+}
+
+TEST_CASE("plan: unfinished tasks carry over, extras beyond the must-do limit become Should") {
+    Rig rig;
+    for (int i = 0; i < 2; ++i) rig.controller.addTask("2026-11-22", "old must " + std::to_string(i), Priority::Must, 30);
+    const auto doneId = rig.controller.addTask("2026-11-22", "already done", Priority::Must, 30).id;
+    rig.controller.setTaskStatus(doneId, TaskStatus::Done);
+    rig.controller.addTask("2026-11-23", "today must A", Priority::Must, 30);
+    rig.controller.addTask("2026-11-23", "today must B", Priority::Must, 30);
+
+    CHECK(rig.controller.unfinishedBefore("2026-11-23") == 2);
+    CHECK(rig.controller.carryOverUnfinished("2026-11-23") == 2);
+    CHECK(rig.controller.carryOverUnfinished("2026-11-23") == 0);  // nothing left to move
+
+    auto today = rig.controller.tasksFor("2026-11-23");
+    CHECK(today.size() == 4);
+    int musts = 0;
+    for (const auto& t : today) musts += t.priority == Priority::Must;
+    CHECK(musts == 3);  // one old must fit (2 + 1), the other was demoted to Should
+}
