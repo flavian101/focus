@@ -36,6 +36,12 @@ QtObject {
         return colors[Math.max(1, Math.min(5, Math.round(v))) - 1]
     }
 
+    function priorityColor(p) {  // 1 = Must, 2 = Should, 3 = Could
+        if (p === 1) return accent
+        if (p === 2) return cAi
+        return cNeutral
+    }
+
     function categoryColor(key) {
         if (key === "focus") return cFocus
         if (key === "ai") return cAi

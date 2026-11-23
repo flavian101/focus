@@ -13,17 +13,45 @@ ApplicationWindow {
     color: Theme.bg
     Behavior on color { ColorAnimation { duration: Theme.normal } }
 
+    property string tab: "today"  // "today" | "insights"
+
     // The saved settings drive the theme.
     Binding { target: Theme; property: "dark"; value: backend.darkMode }
     Binding { target: Theme; property: "accent"; value: backend.accent }
 
-    function openStartSheet() { startSheet.open = true }
+    function openStartSheet() { startSheet.reset(); startSheet.open = true }
+    function openStartSheetFor(taskId, title, minutes) { startSheet.openFor(taskId, title, minutes) }
 
-    DashboardPage {
-        anchors.fill: parent
-        active: backend.phase === "idle"
+    Header {
+        id: header
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        tab: win.tab
+        opacity: backend.phase === "idle" ? 1 : 0
+        visible: opacity > 0.001
+        Behavior on opacity { NumberAnimation { duration: Theme.normal } }
+        onTabSelected: (name) => win.tab = name
         onStartRequested: win.openStartSheet()
     }
+
+    Item {
+        anchors.top: header.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+
+        TodayPage {
+            anchors.fill: parent
+            active: backend.phase === "idle" && win.tab === "today"
+            onFocusTask: (taskId, title, minutes) => win.openStartSheetFor(taskId, title, minutes)
+        }
+        InsightsPage {
+            anchors.fill: parent
+            active: backend.phase === "idle" && win.tab === "insights"
+        }
+    }
+
     SessionPage {
         anchors.fill: parent
         active: backend.phase !== "idle"

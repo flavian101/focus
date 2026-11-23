@@ -17,6 +17,8 @@ QString formatClock(std::int64_t seconds) {
     return QStringLiteral("%1:%2").arg(m, 2, 10, QLatin1Char('0')).arg(s, 2, 10, QLatin1Char('0'));
 }
 
+QString currentDay() { return QDate::currentDate().toString(Qt::ISODate); }
+
 QString whenText(qint64 unixSeconds) {
     const auto when  = QDateTime::fromSecsSinceEpoch(unixSeconds);
     const auto days  = when.date().daysTo(QDate::currentDate());
@@ -47,10 +49,13 @@ FocusBackend::FocusBackend(const std::string& dbPath, std::unique_ptr<focus::Act
         accent_   = settings.value(QStringLiteral("accent"), accent_).toString();
     }
 
+    today_ = currentDay();
+
     connect(&timer_, &QTimer::timeout, this, &FocusBackend::onTick);
     timer_.start(1000);
     refreshSnapshot();
     refreshStats();
+    refreshTasks();
 }
 
 // ------------------------------------------------------------------------------ properties
@@ -103,6 +108,16 @@ QVariantMap FocusBackend::summary() const {
     m[QStringLiteral("aiVisits")]       = s.aiTotal();
     m[QStringLiteral("aiBudget")]       = s.aiBudget.value_or(-1);
     m[QStringLiteral("awayMinutes")]    = static_cast<int>(s.secondsIn(focus::ActivityCategory::Away) / 60);
+    m[QStringLiteral("taskId")]         = 0;
+    m[QStringLiteral("taskTitle")]      = QString();
+    m[QStringLiteral("taskDone")]       = false;
+    if (s.taskId) {
+        if (const auto t = controller_->task(*s.taskId)) {
+            m[QStringLiteral("taskId")]    = static_cast<int>(t->id);
+            m[QStringLiteral("taskTitle")] = QString::fromStdString(t->title);
+            m[QStringLiteral("taskDone")]  = t->status == focus::TaskStatus::Done;
+        }
+    }
     return m;
 }
 
@@ -123,12 +138,13 @@ void FocusBackend::setAccent(const QString& color) {
 // ------------------------------------------------------------------------------- commands
 
 bool FocusBackend::startSession(const QString& goal, const QString& approach, int minutes, int aiBudget,
-                                int mood, int energy, const QString& tag) {
+                                int mood, int energy, const QString& tag, int taskId) {
     focus::SessionPlan plan;
     plan.goal     = goal.trimmed().toStdString();
     plan.approach = approach.trimmed().toStdString();
     plan.duration = std::chrono::minutes(std::clamp(minutes, 1, 240));
     if (aiBudget >= 0) plan.aiBudget = aiBudget;
+    if (taskId > 0) plan.taskId = taskId;
 
     focus::CheckIn before;
     before.mood   = mood;
@@ -157,6 +173,7 @@ void FocusBackend::abandon() {
     }
     refreshSnapshot();
     refreshStats();
+    refreshTasks();
 }
 
 void FocusBackend::submitCheckIn(int mood, int energy, const QString& tag) {
@@ -171,12 +188,112 @@ void FocusBackend::submitCheckIn(int mood, int energy, const QString& tag) {
     }
     refreshSnapshot();
     refreshStats();
+    refreshTasks();
 }
 
 void FocusBackend::skipCheckIn() {
     controller_->skipAfterCheckIn();
     refreshSnapshot();
     refreshStats();
+    refreshTasks();
+}
+
+// ------------------------------------------------------------------------------- day plan
+
+QString FocusBackend::addTask(const QString& title, int priority, int minutes) {
+    const auto p = static_cast<focus::Priority>(std::clamp(priority, 1, 3));
+    QString message;
+    try {
+        const auto result = controller_->addTask(today_.toStdString(), title.trimmed().toStdString(), p, minutes);
+        if (!result.ok) message = QString::fromStdString(result.message);
+    } catch (const focus::StorageError& e) {
+        message = QString::fromUtf8(e.what());
+    }
+    refreshTasks();
+    return message;
+}
+
+// Must -> Should -> Could -> Must. If the next step is refused (the must-do limit), try the one after it.
+QString FocusBackend::cyclePriority(int taskId) {
+    int current = 0;
+    for (const auto& v : tasks_) {
+        const auto m = v.toMap();
+        if (m.value(QStringLiteral("taskId")).toInt() == taskId) current = m.value(QStringLiteral("priority")).toInt();
+    }
+    if (current == 0) return {};
+
+    QString message;
+    for (int step = 1; step <= 2; ++step) {
+        const int next = (current - 1 + step) % 3 + 1;
+        const auto result = controller_->setTaskPriority(taskId, static_cast<focus::Priority>(next));
+        if (result.ok) break;
+        message = QString::fromStdString(result.message);  // explain why a step was skipped
+    }
+    refreshTasks();
+    return message;
+}
+
+void FocusBackend::setTaskDone(int taskId, bool done) {
+    controller_->setTaskStatus(taskId, done ? focus::TaskStatus::Done : focus::TaskStatus::Todo);
+    refreshTasks();
+}
+
+void FocusBackend::dropTask(int taskId) {
+    controller_->setTaskStatus(taskId, focus::TaskStatus::Dropped);
+    refreshTasks();
+}
+
+void FocusBackend::restoreTask(int taskId) {
+    controller_->setTaskStatus(taskId, focus::TaskStatus::Todo);
+    refreshTasks();
+}
+
+int FocusBackend::carryOver() {
+    int moved = 0;
+    try {
+        moved = controller_->carryOverUnfinished(today_.toStdString());
+    } catch (const focus::StorageError& e) {
+        emit errorOccurred(QString::fromUtf8(e.what()));
+    }
+    refreshTasks();
+    return moved;
+}
+
+void FocusBackend::refreshTasks() {
+    const std::string day = today_.toStdString();
+    tasks_.clear();
+    for (const auto& t : controller_->tasksFor(day)) {
+        QVariantMap m;
+        m[QStringLiteral("taskId")]        = static_cast<int>(t.id);
+        m[QStringLiteral("title")]         = QString::fromStdString(t.title);
+        m[QStringLiteral("priority")]      = static_cast<int>(t.priority);
+        m[QStringLiteral("priorityLabel")] = QString::fromUtf8(focus::priorityLabel(t.priority).data(),
+                                                               static_cast<int>(focus::priorityLabel(t.priority).size()));
+        m[QStringLiteral("estimate")]      = t.estimateMinutes;
+        m[QStringLiteral("actualMinutes")] = static_cast<int>(t.actualSeconds / 60);
+        m[QStringLiteral("done")]          = t.status == focus::TaskStatus::Done;
+        m[QStringLiteral("dropped")]       = t.status == focus::TaskStatus::Dropped;
+        tasks_.push_back(m);
+    }
+
+    const auto s = controller_->planFor(day);
+    QVariantMap p;
+    p[QStringLiteral("total")]           = s.total;
+    p[QStringLiteral("done")]            = s.done;
+    p[QStringLiteral("dropped")]         = s.dropped;
+    p[QStringLiteral("mustTotal")]       = s.mustTotal;
+    p[QStringLiteral("mustDone")]        = s.mustDone;
+    p[QStringLiteral("maxMust")]         = controller_->config().maxMustPerDay;
+    p[QStringLiteral("plannedMinutes")]  = s.plannedMinutes;
+    p[QStringLiteral("doneMinutes")]     = s.doneMinutes;
+    p[QStringLiteral("actualMinutes")]   = s.actualMinutes;
+    p[QStringLiteral("capacityMinutes")] = s.capacityMinutes;
+    p[QStringLiteral("overcommitted")]   = s.overcommitted;
+    p[QStringLiteral("completion")]      = s.completion;
+    plan_ = p;
+
+    carryOver_ = controller_->unfinishedBefore(day);
+    emit tasksChanged();
 }
 
 void FocusBackend::shutdown() {
@@ -188,6 +305,11 @@ void FocusBackend::advanceClockForTesting(int seconds) { offset_ += std::chrono:
 // ----------------------------------------------------------------------------- refreshing
 
 void FocusBackend::onTick() {
+    if (const QString day = currentDay(); day != today_) {  // the app was left running past midnight
+        today_ = day;
+        refreshTasks();
+        refreshStats();
+    }
     const auto before = snap_.phase;
     try {
         controller_->tick(now());
@@ -195,7 +317,10 @@ void FocusBackend::onTick() {
         emit errorOccurred(QString::fromUtf8(e.what()));
     }
     refreshSnapshot();
-    if (before != snap_.phase && snap_.phase == focus::Phase::CheckIn) refreshStats();  // a session just ended
+    if (before != snap_.phase && snap_.phase == focus::Phase::CheckIn) {  // a session just ended
+        refreshStats();
+        refreshTasks();  // time spent on the linked task changed
+    }
 }
 
 void FocusBackend::refreshSnapshot() {

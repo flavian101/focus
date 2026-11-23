@@ -9,6 +9,7 @@ Sheet {
     property bool unlimited: false
     property int budget: 3
     property string error: ""
+    property int taskId: 0  // the planned task this session works on (0 = none)
     onDismissed: open = false
 
     // However a session starts (this sheet, the tray, a test), the sheet must get out of the way.
@@ -17,7 +18,17 @@ Sheet {
         function onChanged() { if (backend.phase !== "idle") root.open = false }
     }
 
+    // Open the sheet with a planned task already filled in.
+    function openFor(id, title, estimateMinutes) {
+        reset()
+        taskId = id
+        goal.text = title
+        length.value = Math.max(5, Math.min(120, Math.round(estimateMinutes / 5) * 5))
+        open = true
+    }
+
     function reset() {
+        taskId = 0
         goal.text = ""
         approach.text = ""
         tag.text = ""
@@ -31,6 +42,7 @@ Sheet {
         spacing: 12
 
         Txt { text: "Start a session"; size: 24; strong: true }
+        Txt { visible: root.taskId > 0; text: "Working on a planned task. Its time is added to the plan."; dim: true; size: 12 }
 
         Txt { text: "What will you get done?"; dim: true; size: 13 }
         Field { id: goal; width: parent.width; placeholderText: "Be specific, e.g. finish the login endpoint" }
@@ -104,7 +116,7 @@ Sheet {
                 enabled: goal.text.trim() !== "" && approach.text.trim() !== ""
                 onClicked: {
                     var ok = backend.startSession(goal.text, approach.text, length.value,
-                                                  root.unlimited ? -1 : root.budget, mood.value, energy.value, tag.text)
+                                                  root.unlimited ? -1 : root.budget, mood.value, energy.value, tag.text, root.taskId)
                     if (ok) { root.open = false; root.reset() }
                     else root.error = "Could not start. A session may already be running."
                 }

@@ -9,6 +9,8 @@ Sheet {
     onDismissed: backend.skipCheckIn()
 
     readonly property var s: backend.summary
+    property bool markDone: false
+    onOpenChanged: if (open) markDone = s.completed === true
 
     Column {
         width: parent.width
@@ -43,6 +45,27 @@ Sheet {
             }
         }
 
+        // Only when this session worked on a planned task that is not finished yet.
+        Item {
+            width: parent.width
+            height: visible ? 34 : 0
+            visible: root.s.taskId > 0 && root.s.taskDone !== true
+            Rectangle {
+                id: box
+                anchors.verticalCenter: parent.verticalCenter
+                width: 24; height: 24; radius: 12
+                color: root.markDone ? Theme.good : "transparent"
+                border.width: 2; border.color: root.markDone ? Theme.good : Theme.textDim
+                Behavior on color { ColorAnimation { duration: 200 } }
+                Txt { anchors.centerIn: parent; text: "✓"; size: 14; strong: true; color: "white"
+                      opacity: root.markDone ? 1 : 0; Behavior on opacity { NumberAnimation { duration: 150 } } }
+            }
+            Txt { anchors.left: box.right; anchors.leftMargin: 12; anchors.verticalCenter: parent.verticalCenter
+                  width: parent.width - 40; elide: Text.ElideRight; size: 14
+                  text: "Mark \u201C" + (root.s.taskTitle ? root.s.taskTitle : "") + "\u201D as done" }
+            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.markDone = !root.markDone }
+        }
+
         Txt { text: "How was that?"; strong: true; size: 16 }
         Row {
             spacing: 24
@@ -62,11 +85,25 @@ Sheet {
         Row {
             anchors.right: parent.right
             spacing: 10
-            PillButton { text: "Skip"; onClicked: backend.skipCheckIn() }
+            PillButton {
+                text: "Skip"
+                onClicked: {
+                    var taskId = root.s.taskId
+                    var finished = root.markDone && taskId > 0 && root.s.taskDone !== true
+                    backend.skipCheckIn()
+                    if (finished) backend.setTaskDone(taskId, true)  // skipping the mood check-in still ticks the task off
+                }
+            }
             PillButton {
                 primary: true
                 text: "Save check-in"
-                onClicked: { backend.submitCheckIn(mood.value, energy.value, tag.text); tag.text = ""; mood.value = 3; energy.value = 3 }
+                onClicked: {
+                    var taskId = root.s.taskId
+                    var finished = root.markDone && taskId > 0 && root.s.taskDone !== true
+                    backend.submitCheckIn(mood.value, energy.value, tag.text)
+                    if (finished) backend.setTaskDone(taskId, true)
+                    tag.text = ""; mood.value = 3; energy.value = 3
+                }
             }
         }
     }

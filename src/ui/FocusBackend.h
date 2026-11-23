@@ -34,6 +34,12 @@ class FocusBackend : public QObject {
     Q_PROPERTY(QVariantList week READ week NOTIFY statsChanged)          // [{label,minutes,today}]
     Q_PROPERTY(QVariantList recent READ recent NOTIFY statsChanged)      // [{goal,when,minutes,outcome,aiVisits}]
 
+    // --- the day plan -------------------------------------------------------------------
+    Q_PROPERTY(QString today READ today NOTIFY tasksChanged)             // "YYYY-MM-DD", local
+    Q_PROPERTY(QVariantList tasks READ tasks NOTIFY tasksChanged)        // today's tasks, most important first
+    Q_PROPERTY(QVariantMap plan READ plan NOTIFY tasksChanged)           // totals for today's plan
+    Q_PROPERTY(int carryOverCount READ carryOverCount NOTIFY tasksChanged)  // unfinished tasks from earlier days
+
     // --- appearance (saved between runs) ------------------------------------------------------
     Q_PROPERTY(bool darkMode READ darkMode WRITE setDarkMode NOTIFY appearanceChanged)
     Q_PROPERTY(QString accent READ accent WRITE setAccent NOTIFY appearanceChanged)
@@ -57,13 +63,19 @@ public:
     QVariantList week() const { return week_; }
     QVariantList recent() const { return recent_; }
 
+    QString today() const { return today_; }
+    QVariantList tasks() const { return tasks_; }
+    QVariantMap plan() const { return plan_; }
+    int carryOverCount() const { return carryOver_; }
+
     bool darkMode() const { return darkMode_; }
     QString accent() const { return accent_; }
     void setDarkMode(bool dark);
     void setAccent(const QString& color);
 
+    // taskId 0 = not linked to a planned task
     Q_INVOKABLE bool startSession(const QString& goal, const QString& approach, int minutes, int aiBudget,
-                                  int mood, int energy, const QString& tag);
+                                  int mood, int energy, const QString& tag, int taskId = 0);
     Q_INVOKABLE void pause();
     Q_INVOKABLE void resume();
     Q_INVOKABLE void abandon();
@@ -71,6 +83,15 @@ public:
     Q_INVOKABLE void submitCheckIn(int mood, int energy, const QString& tag);
     Q_INVOKABLE void skipCheckIn();
     Q_INVOKABLE void refreshStats();
+
+    // Plan commands. The ones that can be refused return the reason as text ("" = it worked).
+    Q_INVOKABLE QString addTask(const QString& title, int priority, int minutes);
+    Q_INVOKABLE QString cyclePriority(int taskId);
+    Q_INVOKABLE void setTaskDone(int taskId, bool done);
+    Q_INVOKABLE void dropTask(int taskId);
+    Q_INVOKABLE void restoreTask(int taskId);
+    Q_INVOKABLE int carryOver();
+    Q_INVOKABLE void refreshTasks();
 
     // Called when the app quits: a running session is ended and saved rather than lost.
     void shutdown();
@@ -82,6 +103,7 @@ public:
 signals:
     void changed();
     void statsChanged();
+    void tasksChanged();
     void appearanceChanged();
     void notification(const QString& title, const QString& body);
     void errorOccurred(const QString& message);
@@ -98,6 +120,11 @@ private:
     focus::ControllerSnapshot snap_;
     QTimer timer_;
     std::chrono::seconds offset_{0};
+
+    QString today_;
+    QVariantList tasks_;
+    QVariantMap plan_;
+    int carryOver_ = 0;
 
     QVariantMap stats_;
     QVariantList week_;

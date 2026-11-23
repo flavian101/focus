@@ -36,7 +36,10 @@ qt_add_qml_module(focus_ui
     qml/Toast.qml
     qml/StartSheet.qml
     qml/CheckInSheet.qml
-    qml/DashboardPage.qml
+    qml/Header.qml
+    qml/TaskRow.qml
+    qml/TodayPage.qml
+    qml/InsightsPage.qml
     qml/SessionPage.qml
     qml/Main.qml
 )

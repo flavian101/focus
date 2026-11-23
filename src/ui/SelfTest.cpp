@@ -1,6 +1,7 @@
 // Headless self-test: loads the real QML, walks through a whole session, checks the QML
 // produced no warnings, and saves screenshots. Run via `ctest` or `focus_ui --self-test <dir>`.
 #include <QApplication>
+#include <QDate>
 #include <QDir>
 #include <QEventLoop>
 #include <QImage>
@@ -15,6 +16,7 @@
 #include "core/ActivitySource.h"
 #include "storage/CheckInRepository.h"
 #include "storage/SessionRepository.h"
+#include "storage/TaskRepository.h"
 
 namespace {
 
@@ -91,6 +93,53 @@ void seedHistory(focus::Database& db) {
     }
 }
 
+void seedPlan(focus::Database& db) {
+    focus::TaskRepository tasks(db);
+    const std::string today     = QDate::currentDate().toString(Qt::ISODate).toStdString();
+    const std::string yesterday = QDate::currentDate().addDays(-1).toString(Qt::ISODate).toStdString();
+    const std::int64_t now      = std::time(nullptr);
+
+    auto add = [&](const char* title, focus::Priority p, int minutes, const std::string& day, focus::TaskStatus st) {
+        focus::Task t;
+        t.title = title; t.priority = p; t.estimateMinutes = minutes; t.day = day; t.status = st; t.createdAt = now;
+        if (st == focus::TaskStatus::Done) t.completedAt = now;
+        return tasks.insert(t);
+    };
+    using P = focus::Priority;
+    using S = focus::TaskStatus;
+    add("Review the pull request",        P::Should, 30, yesterday, S::Todo);   // left over from yesterday
+    add("Write the release notes",        P::Must,   45, yesterday, S::Todo);
+    add("Finish the login endpoint",      P::Must,   60, today,     S::Todo);
+    add("Write unit tests for billing",   P::Must,   45, today,     S::Done);
+    add("Read the Spring Security docs",  P::Should, 30, today,     S::Todo);
+    add("Reply to emails",                P::Could,  20, today,     S::Todo);
+    add("Rename the old config keys",     P::Could,  15, today,     S::Dropped);
+}
+
+int mustCount(const QVariantList& tasks) {
+    int n = 0;
+    for (const auto& v : tasks) {
+        const auto m = v.toMap();
+        if (m.value(QStringLiteral("priority")).toInt() == 1 && !m.value(QStringLiteral("dropped")).toBool()) ++n;
+    }
+    return n;
+}
+
+int taskIdByTitle(const QVariantList& tasks, const QString& title) {
+    for (const auto& v : tasks) {
+        const auto m = v.toMap();
+        if (m.value(QStringLiteral("title")).toString() == title) return m.value(QStringLiteral("taskId")).toInt();
+    }
+    return 0;
+}
+
+QVariantMap taskById(const QVariantList& tasks, int id) {
+    for (const auto& v : tasks) {
+        if (v.toMap().value(QStringLiteral("taskId")).toInt() == id) return v.toMap();
+    }
+    return {};
+}
+
 void shot(QQuickWindow* window, const QString& dir, const char* name) {
     if (dir.isEmpty()) return;
     const QImage image = window->grabWindow();
@@ -107,7 +156,9 @@ int runSelfTest(QApplication&, const QString& screenshotDir) {
     // In-memory database + no real window detection: the test never touches your data.
     FocusBackend backend(":memory:", std::make_unique<focus::NullActivitySource>(), /*persistSettings=*/false);
     seedHistory(backend.database());
+    seedPlan(backend.database());
     backend.refreshStats();
+    backend.refreshTasks();
 
     QQmlApplicationEngine engine;
     auto* window = qobject_cast<QQuickWindow*>(loadMainWindow(engine, backend));
@@ -119,24 +170,58 @@ int runSelfTest(QApplication&, const QString& screenshotDir) {
 
     check(backend.phase() == QLatin1String("idle"), "starts idle");
     check(backend.stats().value(QStringLiteral("completed")).toInt() == 7, "history shows 7 completed sessions");
-    shot(window, screenshotDir, "1-dashboard-dark");
+    check(backend.tasks().size() == 5, "today has 5 tasks (one dropped)");
+    check(backend.plan().value(QStringLiteral("done")).toInt() == 1, "one task is already done");
+    check(backend.carryOverCount() == 2, "two unfinished tasks wait from yesterday");
+    shot(window, screenshotDir, "1-today-dark");
+
+    // ---- the must-do limit -------------------------------------------------------------------
+    check(backend.addTask(QStringLiteral("Third must-do"), 1, 30).isEmpty(), "a third must-do is accepted");
+    check(!backend.addTask(QStringLiteral("One must-do too many"), 1, 30).isEmpty(), "a fourth must-do is refused with a reason");
+    check(!backend.addTask(QString(), 2, 30).isEmpty(), "a task without a name is refused");
+    check(backend.addTask(QStringLiteral("A should-do is still fine"), 2, 25).isEmpty(), "other priorities are not limited");
+
+    const int emailsId = taskIdByTitle(backend.tasks(), QStringLiteral("Reply to emails"));
+    const QString msg  = backend.cyclePriority(emailsId);  // Could -> Must is refused, so it lands on Should
+    check(!msg.isEmpty(), "cycling past a full must-do list explains why");
+    check(taskById(backend.tasks(), emailsId).value(QStringLiteral("priority")).toInt() == 2, "priority skipped to Should");
+
+    // ---- carrying over ---------------------------------------------------------------------------
+    check(backend.carryOver() == 2, "two tasks carried over to today");
+    check(backend.carryOverCount() == 0, "nothing left to carry over");
+    check(mustCount(backend.tasks()) <= 3, "the must-do limit still holds after carrying over");
+    wait(900);
+    shot(window, screenshotDir, "1b-today-planned");
+
+    backend.setTaskDone(taskIdByTitle(backend.tasks(), QStringLiteral("Read the Spring Security docs")), true);
+    wait(700);
+
+    window->setProperty("tab", QStringLiteral("insights"));
+    wait(900);
+    shot(window, screenshotDir, "2-insights");
+    window->setProperty("tab", QStringLiteral("today"));
+    wait(600);
 
     backend.setDarkMode(false);
     wait(700);
-    shot(window, screenshotDir, "2-dashboard-light");
+    shot(window, screenshotDir, "3-today-light");
     backend.setDarkMode(true);
     backend.setAccent(QStringLiteral("#14B8A6"));
     wait(600);
-    shot(window, screenshotDir, "3-dashboard-teal");
+    shot(window, screenshotDir, "3b-today-teal");
     backend.setAccent(QStringLiteral("#7C5CFF"));
 
-    QMetaObject::invokeMethod(window, "openStartSheet");
+    // ---- start a session from a planned task ----------------------------------------------
+    const int loginId = taskIdByTitle(backend.tasks(), QStringLiteral("Finish the login endpoint"));
+    QMetaObject::invokeMethod(window, "openStartSheetFor", Q_ARG(QVariant, loginId),
+                              Q_ARG(QVariant, QStringLiteral("Finish the login endpoint")), Q_ARG(QVariant, 60));
     wait(800);
     shot(window, screenshotDir, "4-start-sheet");
 
     check(!backend.startSession(QString(), QStringLiteral("x"), 25, 3, 3, 3, QString()), "a session without a goal is refused");
-    check(backend.startSession(QStringLiteral("Write the self-test"), QStringLiteral("Sketch it on paper"), 25, 3, 2, 4, QStringLiteral("eager")),
-          "session starts");
+    check(backend.startSession(QStringLiteral("Finish the login endpoint"), QStringLiteral("Sketch it on paper"), 25, 3, 2, 4,
+                               QStringLiteral("eager"), loginId),
+          "session starts, linked to the task");
     wait(900);
     check(backend.phase() == QLatin1String("focusing"), "phase is focusing");
 
@@ -152,13 +237,18 @@ int runSelfTest(QApplication&, const QString& screenshotDir) {
     backend.tickNow();
     wait(1200);
     check(backend.phase() == QLatin1String("checkin"), "session ends and asks for a check-in");
+    check(backend.summary().value(QStringLiteral("taskId")).toInt() == loginId, "the check-in knows which task it worked on");
     shot(window, screenshotDir, "6-checkin");
 
     backend.submitCheckIn(4, 3, QStringLiteral("proud"));
+    backend.setTaskDone(loginId, true);
     wait(1200);
     check(backend.phase() == QLatin1String("idle"), "back to idle after the check-in");
     check(backend.stats().value(QStringLiteral("completed")).toInt() == 8, "new session appears in the stats");
-    shot(window, screenshotDir, "7-dashboard-after");
+    const auto login = taskById(backend.tasks(), loginId);
+    check(login.value(QStringLiteral("actualMinutes")).toInt() >= 24, "the session's time landed on the task");
+    check(login.value(QStringLiteral("done")).toBool(), "the task is ticked off");
+    shot(window, screenshotDir, "7-today-after");
 
     check(g_qmlWarnings == 0, "QML printed no warnings or errors");
     std::printf("%s\n", g_failures == 0 ? "SELF-TEST PASSED" : "SELF-TEST FAILED");

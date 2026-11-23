@@ -5,8 +5,6 @@ import FocusUi
 Item {
     id: root
     property bool active: true
-    signal startRequested()
-
     opacity: active ? 1 : 0
     visible: opacity > 0.001
     Behavior on opacity { NumberAnimation { duration: Theme.normal; easing.type: Easing.OutCubic } }
@@ -14,55 +12,17 @@ Item {
 
     readonly property var st: backend.stats
 
-    function greeting() {
-        var h = new Date().getHours()
-        return h < 12 ? "Good morning" : (h < 18 ? "Good afternoon" : "Good evening")
-    }
     function minutesText(v) {
         return v >= 60 ? Math.floor(v / 60) + "h " + Math.round(v % 60) + "m" : Math.round(v) + "m"
     }
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 36
+        anchors.leftMargin: 36
+        anchors.rightMargin: 36
+        anchors.topMargin: 6
+        anchors.bottomMargin: 36
         spacing: 22
-
-        // ---- header ---------------------------------------------------------------------
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 14
-            Column {
-                spacing: 2
-                Txt { text: root.greeting(); size: 30; strong: true }
-                Txt { text: "Your last 7 days"; dim: true; size: 14 }
-            }
-            Item { Layout.fillWidth: true }
-            Row {
-                spacing: 8
-                Layout.alignment: Qt.AlignVCenter
-                Repeater {
-                    model: ["#7C5CFF", "#3B82F6", "#14B8A6", "#F59E0B", "#F43F5E", "#A3E635"]
-                    delegate: Item {
-                        required property string modelData
-                        width: 26; height: 26
-                        scale: swatchArea.containsMouse ? 1.18 : 1.0
-                        Behavior on scale { NumberAnimation { duration: Theme.fast } }
-                        Rectangle {
-                            anchors.fill: parent; radius: 13; color: modelData
-                            border.width: backend.accent.toLowerCase() === modelData.toLowerCase() ? 3 : 0
-                            border.color: Theme.text
-                        }
-                        MouseArea { id: swatchArea; anchors.fill: parent; hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor; onClicked: backend.accent = modelData }
-                    }
-                }
-            }
-            PillButton {
-                text: backend.darkMode ? "Light" : "Dark"
-                onClicked: backend.darkMode = !backend.darkMode
-            }
-            PillButton { primary: true; text: "Start a session"; onClicked: root.startRequested() }
-        }
 
         // ---- headline numbers ------------------------------------------------------------
         RowLayout {

@@ -37,9 +37,15 @@ If your network blocks sqlite.org, install SQLite another way (e.g. vcpkg) and c
 
 ## The Qt window (optional)
 
-`focus_ui` is a Qt Quick front end: dashboard with animated summary cards and a weekly chart,
-a live session screen with a progress ring and AI-budget tracker, a check-in sheet, a tray icon,
-and light/dark themes with a choice of accent colours. It uses the same database as the console app.
+`focus_ui` is a Qt Quick front end. It uses the same database as the console app.
+
+- **Today**: plan your day. Add tasks with a priority (Must / Should / Could) and a time estimate;
+  you get at most 3 Musts, because if everything is a must, nothing is. Tick tasks off, drop them,
+  or press Focus to start a session on one: its time is added to the task, and the check-in offers
+  to mark it done. Unfinished tasks from earlier days can be carried over in one click.
+- **Insights**: animated summary cards and a weekly chart, with recent sessions and AI use.
+- A live session screen with a progress ring and AI-budget tracker, a check-in sheet, a tray icon,
+  and light/dark themes with a choice of accent colours.
 
 1. Install Qt 6 with the Qt Online Installer and tick **Qt 6.x > MSVC 2022 64-bit**
    (that kit works with Visual Studio 2026).
@@ -100,6 +106,8 @@ which is why it can be unit-tested without a clock, a window, or a database.
 
 ## Roadmap
 
+- Hydration and meal reminders (water log, meal windows)
+- All-day activity tracking, a daily review, then an optional local-model summary
 - Global hotkeys in the Qt window (the tray menu covers them for now), a settings page, custom icon
 - Break flow after a session (short/long breaks) on top of the Scheduler
 - Achievements, and reminders that run all day (needs a background mode)
