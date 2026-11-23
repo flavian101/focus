@@ -61,6 +61,10 @@ The build runs `windeployqt` so the exe starts without Qt on your PATH. `ctest -
 also runs `ui_self_test`, which loads the real QML, plays through a session and writes screenshots to
 `build\vs2026\ui-screenshots`.
 
+If a rebuild fails with `LNK1104: cannot open file '...focus_ui.exe'`, the app is still running
+(closing its window keeps it in the tray so a session is not lost). Quit it from the tray icon,
+or run `Get-Process focus_ui | Stop-Process`, then build again.
+
 ## Run the console app
 
 Visual Studio: set `focus.exe` as the startup item and press F5. With no arguments it asks for

@@ -46,6 +46,11 @@ qt_add_qml_module(focus_ui
 
 target_link_libraries(focus_ui PRIVATE Qt6::Quick Qt6::Widgets focus_controller)
 focus_enable_warnings(focus_ui)
+if(MSVC)
+  # C4702 ("unreachable code") fires inside Qt's own template headers at /W4. It is noise from
+  # code we do not own, and it would bury real warnings, so silence it for this target only.
+  target_compile_options(focus_ui PRIVATE /wd4702)
+endif()
 
 if(WIN32)
   target_link_libraries(focus_ui PRIVATE focus_platform)
