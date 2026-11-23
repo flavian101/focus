@@ -20,6 +20,7 @@ struct SessionPlan {
     std::string approach;  // what you will try on your own BEFORE asking anyone or any AI
     std::chrono::minutes duration{25};
     std::optional<int> aiBudget;  // max AI consultations this session; nullopt = no limit
+    std::optional<std::int64_t> taskId;  // the planned task this session works on, if any
 };
 
 // What happened. Live while a session runs, final once it ends.
@@ -33,6 +34,7 @@ struct SessionSummary {
     std::int64_t endedAt = 0;
     SessionOutcome outcome = SessionOutcome::Abandoned;
     std::optional<int> aiBudget;
+    std::optional<std::int64_t> taskId;  // see SessionPlan::taskId
     int aiVisits = 0;      // detected: switched to an AI tool window
     int aiManualLogs = 0;  // self-reported (e.g. AI inside the editor, which we can't see)
     std::array<std::int64_t, kActivityCategoryCount> secondsByCategory{};

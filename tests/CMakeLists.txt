@@ -2,6 +2,7 @@ add_executable(focus_tests
   test_main.cpp
   test_activity_classifier.cpp
   test_controller.cpp
+  test_day_plan.cpp
   test_scheduler.cpp
   test_session_manager.cpp
   test_statistics.cpp

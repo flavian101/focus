@@ -19,6 +19,7 @@ bool SessionManager::start(SessionPlan plan, Clock::time_point now) {
     summary_.approach       = std::move(plan.approach);
     summary_.plannedSeconds = std::chrono::duration_cast<std::chrono::seconds>(plan.duration).count();
     summary_.aiBudget       = plan.aiBudget;
+    summary_.taskId         = plan.taskId;
     summary_.startedAt      = unixNow();
 
     spent_.fill(Clock::duration::zero());
