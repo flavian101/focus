@@ -35,9 +35,9 @@ TEST_CASE("migrate is idempotent and stamps the schema version") {
     auto db = Database::open(":memory:");
     CHECK(db.userVersion() == 0);
     migrate(db);
-    CHECK(db.userVersion() == 2);
+    CHECK(db.userVersion() == 3);
     CHECK_NOTHROW(migrate(db));  // second run changes nothing
-    CHECK(db.userVersion() == 2);
+    CHECK(db.userVersion() == 3);
 }
 
 TEST_CASE("a database from the future is refused") {
@@ -151,7 +151,7 @@ TEST_CASE("upgrading a v1 database keeps its data and gives new columns a defaul
     CHECK(db.userVersion() == 1);
 
     migrate(db);  // the upgrade a user gets when they install the new version
-    CHECK(db.userVersion() == 2);
+    CHECK(db.userVersion() == 3);
 
     auto rows = SessionRepository(db).startedSince(0);
     REQUIRE(rows.size() == 1);
