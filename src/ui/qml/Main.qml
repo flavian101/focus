@@ -4,16 +4,16 @@ import FocusUi
 
 ApplicationWindow {
     id: win
-    width: 1080
+    width: 1200
     height: 720
-    minimumWidth: 900
+    minimumWidth: 980
     minimumHeight: 660
     visible: true
     title: "Focus"
     color: Theme.bg
     Behavior on color { ColorAnimation { duration: Theme.normal } }
 
-    property string tab: "today"  // "today" | "health" | "insights"
+    property string tab: "today"  // "today" | "health" | "activity" | "insights"
 
     // The saved settings drive the theme.
     Binding { target: Theme; property: "dark"; value: backend.darkMode }
@@ -49,6 +49,10 @@ ApplicationWindow {
         HealthPage {
             anchors.fill: parent
             active: backend.phase === "idle" && win.tab === "health"
+        }
+        ActivityPage {
+            anchors.fill: parent
+            active: backend.phase === "idle" && win.tab === "activity"
         }
         InsightsPage {
             anchors.fill: parent

@@ -44,6 +44,10 @@ class FocusBackend : public QObject {
     // --- water and meals ----------------------------------------------------------------
     Q_PROPERTY(QVariantMap wellness READ wellness NOTIFY wellnessChanged)  // glasses, goal, pace, meals[]
 
+    // --- all-day activity ----------------------------------------------------------------
+    Q_PROPERTY(QVariantMap activityDay READ activityDay NOTIFY activityChanged)   // totals, hours[], apps[]
+    Q_PROPERTY(bool trackingEnabled READ trackingEnabled NOTIFY activityChanged)
+
     // --- appearance (saved between runs) ------------------------------------------------------
     Q_PROPERTY(bool darkMode READ darkMode WRITE setDarkMode NOTIFY appearanceChanged)
     Q_PROPERTY(QString accent READ accent WRITE setAccent NOTIFY appearanceChanged)
@@ -67,6 +71,8 @@ public:
     QVariantList week() const { return week_; }
     QVariantList recent() const { return recent_; }
 
+    QVariantMap activityDay() const { return activityDay_; }
+    bool trackingEnabled() const { return controller_->trackingEnabled(); }
     QVariantMap wellness() const { return wellness_; }
     QString today() const { return today_; }
     QVariantList tasks() const { return tasks_; }
@@ -105,6 +111,10 @@ public:
     Q_INVOKABLE void setMeal(const QString& mealId, const QString& status);
     Q_INVOKABLE void refreshWellness();
 
+    Q_INVOKABLE void setTrackingEnabled(bool enabled);
+    Q_INVOKABLE void clearTodayActivity();
+    Q_INVOKABLE void refreshActivity();
+
     // Called when the app quits: a running session is ended and saved rather than lost.
     void shutdown();
 
@@ -118,6 +128,7 @@ signals:
     void statsChanged();
     void tasksChanged();
     void wellnessChanged();
+    void activityChanged();
     void appearanceChanged();
     void notification(const QString& title, const QString& body);
     void errorOccurred(const QString& message);
@@ -139,6 +150,7 @@ private:
     QDateTime fixedLocal_;  // only set by tests
     int tickCount_ = 0;
     QVariantMap wellness_;
+    QVariantMap activityDay_;
 
     QString today_;
     QVariantList tasks_;

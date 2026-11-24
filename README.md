@@ -50,6 +50,12 @@ If your network blocks sqlite.org, install SQLite another way (e.g. vcpkg) and c
   dinner): you are reminded when a window opens and every 30 minutes until you tap "I ate" or "Skip".
   Reminders are held back while you are away from the keyboard and appear when you return.
   The tray menu has "Log a glass of water".
+- **Activity**: what your computer day looked like. While Focus runs in the tray it records, minute
+  by minute, which *category* (focus / AI / other / distraction / away) and which *app name* was in
+  front. You see an hour-by-hour stacked chart, your most used apps, your longest focus block, and how
+  often you switch apps. Time away from the keyboard is counted as away, and time the laptop slept
+  is not counted at all. **Privacy:** only app names and categories are stored, on this computer, never
+  window titles or what you type. You can pause tracking or delete today's data from the same page.
 - **Insights**: animated summary cards and a weekly chart, with recent sessions and AI use.
 - A live session screen with a progress ring and AI-budget tracker, a check-in sheet, a tray icon,
   and light/dark themes with a choice of accent colours.
@@ -118,7 +124,7 @@ which is why it can be unit-tested without a clock, a window, or a database.
 ## Roadmap
 
 - Editable meal times and waking hours (a settings page)
-- All-day activity tracking, a daily review, then an optional local-model summary
+- A daily review built on the activity data, then an optional local-model summary
 - Global hotkeys in the Qt window (the tray menu covers them for now), a settings page, custom icon
 - Break flow after a session (short/long breaks) on top of the Scheduler
 - Achievements, and reminders that run all day (needs a background mode)

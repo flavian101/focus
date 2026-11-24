@@ -19,6 +19,10 @@ QString formatClock(std::int64_t seconds) {
 
 QString currentDay() { return QDate::currentDate().toString(Qt::ISODate); }
 
+QString minuteClock(int minute) {
+    return minute < 0 ? QString() : QString::fromStdString(focus::clockText(minute));
+}
+
 QString stateName(focus::MealState s) {
     switch (s) {
         case focus::MealState::Upcoming: return QStringLiteral("upcoming");
@@ -68,6 +72,7 @@ FocusBackend::FocusBackend(const std::string& dbPath, std::unique_ptr<focus::Act
     refreshStats();
     refreshTasks();
     refreshWellness();
+    refreshActivity();
 }
 
 // ------------------------------------------------------------------------------ properties
@@ -310,6 +315,11 @@ void FocusBackend::refreshTasks() {
 
 void FocusBackend::shutdown() {
     if (snap_.phase == focus::Phase::Focusing || snap_.phase == focus::Phase::Paused) abandon();
+    try {
+        controller_->flushActivity();  // minutes still held in memory must reach the database
+    } catch (const focus::StorageError& e) {
+        qWarning("Could not save activity on exit: %s", e.what());
+    }
 }
 
 void FocusBackend::advanceClockForTesting(int seconds) { offset_ += std::chrono::seconds(seconds); }
@@ -319,6 +329,65 @@ void FocusBackend::advanceClockForTesting(int seconds) { offset_ += std::chrono:
 focus::LocalTime FocusBackend::localTime() const {
     const QDateTime t = fixedLocal_.isValid() ? fixedLocal_ : QDateTime::currentDateTime();
     return focus::LocalTime{t.date().toString(Qt::ISODate).toStdString(), t.time().hour() * 60 + t.time().minute()};
+}
+
+// ------------------------------------------------------------------------------ all-day activity
+
+void FocusBackend::setTrackingEnabled(bool enabled) {
+    controller_->setTrackingEnabled(enabled);
+    refreshActivity();
+}
+
+void FocusBackend::clearTodayActivity() {
+    controller_->clearActivity(today_.toStdString());
+    refreshActivity();
+}
+
+void FocusBackend::refreshActivity() {
+    using focus::ActivityCategory;
+    const auto d = controller_->daySummary(today_.toStdString());
+    auto minutes = [&](ActivityCategory c) { return static_cast<double>(d.secondsByCategory[static_cast<std::size_t>(c)]) / 60.0; };
+
+    QVariantMap m;
+    m[QStringLiteral("activeMinutes")]      = d.activeSeconds / 60.0;
+    m[QStringLiteral("focusMinutes")]       = minutes(ActivityCategory::Focus);
+    m[QStringLiteral("aiMinutes")]          = minutes(ActivityCategory::AiAssistant);
+    m[QStringLiteral("distractionMinutes")] = minutes(ActivityCategory::Distraction);
+    m[QStringLiteral("awayMinutes")]        = minutes(ActivityCategory::Away);
+    m[QStringLiteral("longestFocus")]       = d.longestFocusMinutes;
+    m[QStringLiteral("switches")]           = d.contextSwitches;
+    m[QStringLiteral("switchesPerHour")]    = d.switchesPerActiveHour;
+    m[QStringLiteral("firstText")]          = minuteClock(d.firstActiveMinute);
+    m[QStringLiteral("lastText")]           = minuteClock(d.lastActiveMinute);
+
+    QVariantList hours;
+    for (const auto& h : d.hours) {
+        QVariantMap hm;
+        auto at = [&](ActivityCategory c) { return h.seconds[static_cast<std::size_t>(c)] / 60.0; };
+        hm[QStringLiteral("hour")]        = h.hour;
+        hm[QStringLiteral("focus")]       = at(ActivityCategory::Focus);
+        hm[QStringLiteral("ai")]          = at(ActivityCategory::AiAssistant);
+        hm[QStringLiteral("neutral")]     = at(ActivityCategory::Neutral);
+        hm[QStringLiteral("distraction")] = at(ActivityCategory::Distraction);
+        hm[QStringLiteral("away")]        = at(ActivityCategory::Away);
+        hours.push_back(hm);
+    }
+    m[QStringLiteral("hours")] = hours;
+
+    QVariantList apps;
+    const double top = d.topApps.empty() ? 1.0 : static_cast<double>(d.topApps.front().seconds);
+    for (const auto& a : d.topApps) {
+        if (a.seconds < 30) continue;  // under half a minute is noise, not a row in a list
+        QVariantMap am;
+        am[QStringLiteral("app")]      = QString::fromStdString(a.app);
+        am[QStringLiteral("category")] = QString::fromUtf8(focus::categoryName(a.category).data(), static_cast<int>(focus::categoryName(a.category).size()));
+        am[QStringLiteral("minutes")]  = a.seconds / 60.0;
+        am[QStringLiteral("share")]    = a.seconds / top;  // 1.0 for the most used app: for drawing proportional bars
+        apps.push_back(am);
+    }
+    m[QStringLiteral("apps")] = apps;
+    activityDay_ = m;
+    emit activityChanged();
 }
 
 // -------------------------------------------------------------------------- water and meals
@@ -377,6 +446,12 @@ void FocusBackend::onTick() {
         refreshTasks();
         refreshStats();
     }
+    try {
+        controller_->trackActivity(localTime(), now());  // all-day activity, session or not
+    } catch (const focus::StorageError& e) {
+        emit errorOccurred(QString::fromUtf8(e.what()));
+    }
+    if (tickCount_ % 30 == 0) refreshActivity();
     controller_->tickWellness(localTime(), now());  // water and meals run all day, session or not
     if (++tickCount_ % 15 == 0) refreshWellness();  // pace and meal states drift with the clock
 

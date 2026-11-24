@@ -41,15 +41,15 @@ Item {
         Item {
             Layout.alignment: Qt.AlignVCenter
             Layout.leftMargin: 10
-            implicitWidth: 308
+            implicitWidth: 368
             implicitHeight: 40
             Rectangle { anchors.fill: parent; radius: 20; color: Theme.surfaceHi
                 Behavior on color { ColorAnimation { duration: Theme.normal } } }
             Rectangle {
                 id: highlight
                 y: 3; height: parent.height - 6; radius: 17
-                width: 98
-                x: 4 + 100 * Math.max(0, ["today", "health", "insights"].indexOf(root.tab))
+                width: 88
+                x: 4 + 90 * Math.max(0, ["today", "health", "activity", "insights"].indexOf(root.tab))
                 color: Theme.accent
                 Behavior on x { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
                 Behavior on color { ColorAnimation { duration: Theme.normal } }
@@ -58,10 +58,10 @@ Item {
                 anchors.fill: parent
                 anchors.margins: 4
                 Repeater {
-                    model: [{ key: "today", label: "Today" }, { key: "health", label: "Health" }, { key: "insights", label: "Insights" }]
+                    model: [{ key: "today", label: "Today" }, { key: "health", label: "Health" }, { key: "activity", label: "Activity" }, { key: "insights", label: "Insights" }]
                     delegate: Item {
                         required property var modelData
-                        width: 100; height: parent.height
+                        width: 90; height: parent.height
                         Txt {
                             anchors.centerIn: parent
                             text: modelData.label; size: 14; strong: true
@@ -77,7 +77,7 @@ Item {
         Item { Layout.fillWidth: true }
 
         Row {
-            visible: root.width > 1000
+            visible: root.width > 1150
             spacing: 8
             Layout.alignment: Qt.AlignVCenter
             Repeater {

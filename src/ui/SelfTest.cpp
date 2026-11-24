@@ -14,6 +14,7 @@
 #include "FocusBackend.h"
 #include "UiApp.h"
 #include "core/ActivitySource.h"
+#include "storage/ActivityRepository.h"
 #include "storage/CheckInRepository.h"
 #include "storage/SessionRepository.h"
 #include "storage/TaskRepository.h"
@@ -116,6 +117,34 @@ void seedPlan(focus::Database& db) {
     add("Rename the old config keys",     P::Could,  15, today,     S::Dropped);
 }
 
+// A believable day at the computer, one row per minute.
+void seedActivity(focus::Database& db) {
+    using C = focus::ActivityCategory;
+    const std::string today = QDate::currentDate().toString(Qt::ISODate).toStdString();
+    std::vector<focus::ActivityBucket> buckets;
+    auto seg = [&](int fromHour, int fromMin, int toHour, int toMin, C category, const char* app) {
+        for (int m = fromHour * 60 + fromMin; m < toHour * 60 + toMin; ++m) {
+            buckets.push_back({today, m, category, category == C::Away ? "" : app, 60});
+        }
+    };
+    seg(8, 40, 9, 5,    C::Neutral,     "outlook");
+    seg(9, 5,  9, 50,   C::Focus,       "code");
+    seg(9, 50, 9, 58,   C::AiAssistant, "chrome");
+    seg(9, 58, 10, 35,  C::Focus,       "code");
+    seg(10, 35, 10, 50, C::Distraction, "chrome");
+    seg(10, 50, 12, 10, C::Focus,       "devenv");
+    seg(12, 10, 12, 55, C::Away,        "");
+    seg(12, 55, 13, 20, C::Neutral,     "slack");
+    seg(13, 20, 13, 40, C::Focus,       "code");
+    seg(13, 40, 13, 46, C::AiAssistant, "chrome");
+    seg(13, 46, 14, 10, C::Focus,       "code");
+    seg(14, 10, 14, 25, C::Distraction, "chrome");
+    seg(14, 25, 15, 40, C::Focus,       "code");
+    seg(15, 40, 16, 0,  C::AiAssistant, "chrome");
+    seg(16, 0, 16, 30,  C::Neutral,     "explorer");
+    focus::ActivityRepository(db).addSeconds(buckets);
+}
+
 int mustCount(const QVariantList& tasks) {
     int n = 0;
     for (const auto& v : tasks) {
@@ -161,14 +190,16 @@ int runSelfTest(QApplication&, const QString& screenshotDir) {
     QObject::connect(&backend, &FocusBackend::notification, [&notes](const QString& title, const QString&) { notes << title; });
     seedHistory(backend.database());
     seedPlan(backend.database());
+    seedActivity(backend.database());
     backend.refreshStats();
     backend.refreshTasks();
+    backend.refreshActivity();
 
     QQmlApplicationEngine engine;
     auto* window = qobject_cast<QQuickWindow*>(loadMainWindow(engine, backend));
     check(window != nullptr, "Main.qml loads");
     if (!window) return 1;
-    window->resize(1080, 720);
+    window->resize(1200, 720);
     window->show();
     wait(1600);  // let the entrance animations finish
 
@@ -246,6 +277,32 @@ int runSelfTest(QApplication&, const QString& screenshotDir) {
     window->setProperty("tab", QStringLiteral("health"));
     wait(1500);
     shot(window, screenshotDir, "8-health");
+    window->setProperty("tab", QStringLiteral("today"));
+    wait(500);
+
+    // ---- all-day activity ----------------------------------------------------------------------
+    backend.refreshActivity();
+    const auto day = backend.activityDay();
+    check(day.value(QStringLiteral("activeMinutes")).toDouble() > 300, "the day shows hours of activity");
+    check(day.value(QStringLiteral("longestFocus")).toInt() >= 60, "there is a long focus block");
+    check(day.value(QStringLiteral("aiMinutes")).toDouble() > 25, "AI time is counted");
+    check(day.value(QStringLiteral("awayMinutes")).toDouble() >= 44, "the lunch break shows as away");
+    check(day.value(QStringLiteral("hours")).toList().size() == 24, "24 hour columns");
+    check(!day.value(QStringLiteral("apps")).toList().isEmpty() &&
+          day.value(QStringLiteral("apps")).toList().first().toMap().value(QStringLiteral("app")).toString() == QLatin1String("code"),
+          "code is the most used app");
+    window->setProperty("tab", QStringLiteral("activity"));
+    wait(1700);
+    shot(window, screenshotDir, "9-activity");
+
+    backend.setTrackingEnabled(false);
+    check(!backend.trackingEnabled(), "tracking can be paused");
+    backend.setTrackingEnabled(true);
+    check(backend.trackingEnabled(), "and resumed");
+    backend.clearTodayActivity();
+    check(backend.activityDay().value(QStringLiteral("activeMinutes")).toDouble() < 1.0, "today's activity can be deleted");
+    wait(500);
+    shot(window, screenshotDir, "9b-activity-empty");
     window->setProperty("tab", QStringLiteral("today"));
     wait(500);
 

@@ -40,6 +40,7 @@ qt_add_qml_module(focus_ui
     qml/TaskRow.qml
     qml/TodayPage.qml
     qml/HealthPage.qml
+    qml/ActivityPage.qml
     qml/InsightsPage.qml
     qml/SessionPage.qml
     qml/Main.qml
