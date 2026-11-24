@@ -1,5 +1,7 @@
 # Core: pure, portable C++ (no Win32 includes). Everything else depends on this.
 add_library(focus_core STATIC
+  ActivityTracker.cpp
+  DaySummary.cpp
   DayPlan.cpp
   Scheduler.cpp
   SessionManager.cpp

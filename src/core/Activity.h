@@ -1,5 +1,6 @@
 #pragma once
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -25,6 +26,15 @@ constexpr std::string_view categoryName(ActivityCategory c) {
         case ActivityCategory::Away:        return "away";
     }
     return "neutral";
+}
+
+constexpr std::optional<ActivityCategory> parseCategory(std::string_view s) {
+    if (s == "focus")       return ActivityCategory::Focus;
+    if (s == "neutral")     return ActivityCategory::Neutral;
+    if (s == "distraction") return ActivityCategory::Distraction;
+    if (s == "ai")          return ActivityCategory::AiAssistant;
+    if (s == "away")        return ActivityCategory::Away;
+    return std::nullopt;
 }
 
 // What the OS says is in front of the user right now, as plain UTF-8 text.

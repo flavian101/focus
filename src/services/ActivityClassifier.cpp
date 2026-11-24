@@ -15,16 +15,6 @@ std::string lowerAscii(std::string_view in) {
     return out;
 }
 
-// "Code.exe" -> "code"
-std::string normalizeProcess(std::string_view name) {
-    std::string s = lowerAscii(name);
-    constexpr std::string_view kExe = ".exe";
-    if (s.size() >= kExe.size() && s.compare(s.size() - kExe.size(), kExe.size(), kExe) == 0) {
-        s.resize(s.size() - kExe.size());
-    }
-    return s;
-}
-
 // Browsers only show the ACTIVE tab's title, which is exactly what we want to match on.
 constexpr std::array<std::string_view, 6> kBrowsers = {"chrome", "msedge", "firefox", "brave", "opera", "vivaldi"};
 
@@ -40,16 +30,25 @@ constexpr std::array<std::string_view, 12> kFocusApps = {
 
 }  // namespace
 
+std::string normalizedProcessName(std::string_view name) {
+    std::string s = lowerAscii(name);
+    constexpr std::string_view kExe = ".exe";
+    if (s.size() >= kExe.size() && s.compare(s.size() - kExe.size(), kExe.size(), kExe) == 0) {
+        s.resize(s.size() - kExe.size());
+    }
+    return s;
+}
+
 ActivityClassifier::ActivityClassifier(std::vector<ActivityRule> rules) : rules_(std::move(rules)) {
     // Normalize once up front so classify() can compare cheaply.
     for (auto& r : rules_) {
-        r.process       = normalizeProcess(r.process);
+        r.process       = normalizedProcessName(r.process);
         r.titleContains = lowerAscii(r.titleContains);
     }
 }
 
 ActivityCategory ActivityClassifier::classify(const ForegroundWindow& window) const {
-    const std::string process = normalizeProcess(window.processName);
+    const std::string process = normalizedProcessName(window.processName);
     const std::string title   = lowerAscii(window.title);
 
     for (const auto& r : rules_) {
