@@ -9,6 +9,7 @@ add_executable(focus_tests
   test_storage.cpp
   test_task_storage.cpp
   test_timer.cpp
+  test_wellness.cpp
 )
 target_link_libraries(focus_tests PRIVATE focus_core focus_services focus_storage focus_controller doctest::doctest)
 focus_enable_warnings(focus_tests)
