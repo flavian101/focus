@@ -10,7 +10,8 @@ Each session is a small contract with yourself:
 3. Work. Focus watches which kind of window is in front (editor, distraction, AI assistant),
    counts AI visits against your budget, and nudges you with a notification when you go over.
    Time with no keyboard/mouse input for 5 minutes is counted as "away", not focus, and
-   Eye Care (every 20 min), Stretch (45 min) and Water (60 min) reminders pop up while you work.
+   Eye Care (every 20 min) and Stretch (45 min) reminders pop up while you work. Water and meals are
+   handled all day by the Qt app (see below).
 4. Check in again. Everything is saved locally, and `focus stats` shows trends.
 
 Everything stays on your machine (`%LOCALAPPDATA%\Focus\focus.db`). Window titles are used to

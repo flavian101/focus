@@ -5,7 +5,9 @@
 #include "services/Reminders.h"
 #include "storage/CheckInRepository.h"
 #include "storage/SessionRepository.h"
+#include "storage/SettingsRepository.h"
 #include "storage/TaskRepository.h"
+#include "storage/WellnessRepository.h"
 
 namespace focus {
 
@@ -21,10 +23,12 @@ SessionController::SessionController(Database& db, ActivitySource& source, Confi
       source_(source),
       config_(config),
       notify_(std::move(notify)),
+      wellness_(config.water, config.meals),
       session_([this](const SessionEvent& e) { onSessionEvent(e); }) {
     if (config_.remindersEnabled) {
         for (auto& reminder : defaultReminders()) scheduler_.add(std::move(reminder));
     }
+    wellness_.setWaterGoal(SettingsRepository(db_).getInt("water_goal", config_.water.goalGlasses));
 }
 
 bool SessionController::start(SessionPlan plan, CheckIn before, Clock::time_point now) {
@@ -156,6 +160,58 @@ void SessionController::submitAfterCheckIn(CheckIn after) {
 }
 
 void SessionController::skipAfterCheckIn() { awaitingCheckIn_ = false; }
+
+// ---------------------------------------------------------------------------- water and meals
+
+void SessionController::logWater(const LocalTime& local) {
+    WellnessRepository(db_).addGlass(local.day, local.minuteOfDay, unixNow());
+}
+
+bool SessionController::undoWater(const LocalTime& local) { return WellnessRepository(db_).undoLastGlass(local.day); }
+
+void SessionController::setMeal(const LocalTime& local, const std::string& mealId, std::optional<MealStatus> status) {
+    WellnessRepository repo(db_);
+    if (status) repo.setMeal(local.day, mealId, *status, unixNow());
+    else repo.clearMeal(local.day, mealId);
+}
+
+void SessionController::setWaterGoal(int glasses) {
+    wellness_.setWaterGoal(glasses);
+    SettingsRepository(db_).setInt("water_goal", wellness_.waterRule().goalGlasses);  // store the clamped value
+}
+
+WellnessSnapshot SessionController::wellness(const LocalTime& local) {
+    WellnessRepository repo(db_);
+    const auto water = repo.waterFor(local.day);
+    const auto eaten = repo.mealsFor(local.day);
+
+    WellnessSnapshot snap;
+    snap.glasses        = water.glasses;
+    snap.goal           = wellness_.waterRule().goalGlasses;
+    snap.expected       = expectedGlasses(wellness_.waterRule(), local.minuteOfDay);
+    snap.dayStartMinute = wellness_.waterRule().dayStartMinute;
+    snap.dayEndMinute   = wellness_.waterRule().dayEndMinute;
+    for (const auto& meal : wellness_.meals()) {
+        std::optional<MealStatus> logged;
+        if (const auto it = eaten.find(meal.id); it != eaten.end()) logged = it->second;
+        snap.meals.push_back({meal.id, meal.name, meal.startMinute, meal.endMinute, mealState(meal, logged, local.minuteOfDay)});
+    }
+    return snap;
+}
+
+void SessionController::tickWellness(const LocalTime& local, Clock::time_point now) {
+    using namespace std::chrono_literals;
+    if (!config_.wellnessEnabled) return;
+    if (wellnessChecked_ && now - lastWellnessCheck_ < 30s) return;
+    wellnessChecked_     = true;
+    lastWellnessCheck_   = now;
+
+    WellnessRepository repo(db_);
+    const bool present = source_.idleFor() < config_.awayThreshold;
+    for (const auto& r : wellness_.due(local, repo.waterFor(local.day), repo.mealsFor(local.day), present)) {
+        notify(r.title, r.body);
+    }
+}
 
 PlanRules SessionController::planRules() const {
     PlanRules rules;

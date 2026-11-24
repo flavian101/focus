@@ -12,6 +12,7 @@
 #include "core/Configuration.h"
 #include "core/DayPlan.h"
 #include "core/Task.h"
+#include "core/Wellness.h"
 #include "core/Scheduler.h"
 #include "core/SessionManager.h"
 #include "core/Statistics.h"
@@ -30,6 +31,23 @@ struct TaskResult {
     bool ok = false;
     std::string message;
     std::int64_t id = 0;  // the task that was created or changed
+};
+
+struct MealView {
+    std::string id;
+    std::string name;
+    int startMinute = 0;
+    int endMinute   = 0;
+    MealState state = MealState::Upcoming;
+};
+
+struct WellnessSnapshot {
+    int glasses  = 0;
+    int goal     = 8;
+    int expected = 0;  // where you should be by now to be on pace
+    int dayStartMinute = 0;
+    int dayEndMinute   = 0;
+    std::vector<MealView> meals;
 };
 
 enum class Phase {
@@ -91,6 +109,16 @@ public:
     std::optional<Task> task(std::int64_t id);
     PlanSummary planFor(const std::string& day);
 
+    // ---- water and meals: all day, with or without a session. `local` is the caller's clock. ----
+    void logWater(const LocalTime& local);
+    bool undoWater(const LocalTime& local);
+    void setMeal(const LocalTime& local, const std::string& mealId, std::optional<MealStatus> status);  // nullopt = clear
+    void setWaterGoal(int glasses);  // saved between runs
+    WellnessSnapshot wellness(const LocalTime& local);
+    // Call about once a second. It looks at most every 30 seconds, and shows reminders through the
+    // notify callback only while the user is at the keyboard.
+    void tickWellness(const LocalTime& local, Clock::time_point now);
+
     ControllerSnapshot snapshot(Clock::time_point now) const;
     StatsReport stats(int days);
     std::vector<SessionSummary> recentSessions(int limit);
@@ -108,6 +136,10 @@ private:
     ActivitySource& source_;
     Configuration config_;
     NotifyFn notify_;
+
+    WellnessEngine wellness_;
+    bool wellnessChecked_ = false;
+    Clock::time_point lastWellnessCheck_{};
 
     ActivityClassifier classifier_;
     SessionManager session_;

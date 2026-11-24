@@ -259,3 +259,91 @@ TEST_CASE("plan: unfinished tasks carry over, extras beyond the must-do limit be
     for (const auto& t : today) musts += t.priority == Priority::Must;
     CHECK(musts == 3);  // one old must fit (2 + 1), the other was demoted to Should
 }
+
+// ------------------------------------------------------------------------------ water and meals
+
+namespace {
+LocalTime local(int minute, const char* day = "2026-11-23") { return LocalTime{day, minute}; }
+}  // namespace
+
+TEST_CASE("wellness: glasses can be logged and undone, and the snapshot shows pace") {
+    Rig rig;
+    rig.controller.logWater(local(9 * 60));
+    rig.controller.logWater(local(10 * 60));
+    auto snap = rig.controller.wellness(local(15 * 60));
+    CHECK(snap.glasses == 2);
+    CHECK(snap.goal == 8);
+    CHECK(snap.expected == 4);  // 15:00 is halfway through 08:00-22:00
+
+    CHECK(rig.controller.undoWater(local(15 * 60)));
+    CHECK(rig.controller.wellness(local(15 * 60)).glasses == 1);
+}
+
+TEST_CASE("wellness: the water goal is saved and survives a restart") {
+    Rig rig;
+    rig.controller.setWaterGoal(10);
+    CHECK(rig.controller.wellness(local(12 * 60)).goal == 10);
+
+    SessionController reopened(rig.db, rig.source, Configuration::defaults());  // a "restart" on the same database
+    CHECK(reopened.wellness(local(12 * 60)).goal == 10);
+
+    rig.controller.setWaterGoal(500);
+    CHECK(rig.controller.wellness(local(12 * 60)).goal == 20);  // clamped, and the clamped value is what is stored
+}
+
+TEST_CASE("wellness: a water reminder fires when behind pace, then waits") {
+    Rig rig;
+    rig.controller.tickWellness(local(10 * 60), t0);
+    CHECK(rig.notified("Time for water"));
+
+    const auto before = rig.notifications.size();
+    rig.controller.tickWellness(local(10 * 60 + 1), t0 + 10s);  // looked at too recently: ignored
+    CHECK(rig.notifications.size() == before);
+}
+
+TEST_CASE("wellness: logging a glass quietens the reminder") {
+    Rig rig;
+    rig.controller.logWater(local(9 * 60 + 50));
+    rig.controller.tickWellness(local(10 * 60), t0);
+    CHECK_FALSE(rig.notified("Time for water"));  // just had one, and pace is only 1 glass
+}
+
+TEST_CASE("wellness: nothing is shown while away, and it appears on return") {
+    Rig rig;
+    rig.source.idle = 20min;
+    rig.controller.tickWellness(local(10 * 60), t0);
+    CHECK(rig.notifications.empty());
+
+    rig.source.idle = 0s;
+    rig.controller.tickWellness(local(10 * 60 + 1), t0 + 31s);
+    CHECK(rig.notified("Time for water"));
+}
+
+TEST_CASE("wellness: meals are reminded, answered, and reflected in the snapshot") {
+    Rig rig;
+    rig.controller.logWater(local(12 * 60 + 25));
+    rig.controller.tickWellness(local(12 * 60 + 30), t0);
+    CHECK(rig.notified("Lunch time"));
+
+    auto snap = rig.controller.wellness(local(12 * 60 + 30));
+    REQUIRE(snap.meals.size() == 3);
+    CHECK(snap.meals[0].state == MealState::Missed);    // breakfast window ended at 10:00
+    CHECK(snap.meals[1].state == MealState::Due);       // lunch
+    CHECK(snap.meals[2].state == MealState::Upcoming);  // dinner
+
+    rig.controller.setMeal(local(12 * 60 + 40), "lunch", MealStatus::Ate);
+    CHECK(rig.controller.wellness(local(12 * 60 + 40)).meals[1].state == MealState::Ate);
+    rig.controller.setMeal(local(12 * 60 + 40), "lunch", std::nullopt);  // changed my mind
+    CHECK(rig.controller.wellness(local(12 * 60 + 40)).meals[1].state == MealState::Due);
+}
+
+TEST_CASE("wellness: it can be switched off") {
+    Rig rig;
+    auto cfg            = Configuration::defaults();
+    cfg.wellnessEnabled = false;
+    cfg.remindersEnabled = false;
+    std::vector<std::string> seen;
+    SessionController quiet(rig.db, rig.source, cfg, [&](const Notification& n) { seen.push_back(n.title); });
+    quiet.tickWellness(local(10 * 60), t0);
+    CHECK(seen.empty());
+}

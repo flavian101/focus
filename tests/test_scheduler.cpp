@@ -80,7 +80,7 @@ TEST_CASE("a reminder needs a positive interval") {
 
 TEST_CASE("the built-in reminders are valid and have unique ids") {
     const auto reminders = focus::defaultReminders();
-    CHECK(reminders.size() == 3);
+    CHECK(reminders.size() == 2);
     std::set<std::string> ids;
     for (const auto& r : reminders) {
         CHECK(r.interval > 0s);
