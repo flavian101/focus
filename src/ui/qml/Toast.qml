@@ -25,6 +25,7 @@ Item {
 
     Rectangle {
         anchors.fill: parent
+        MouseArea { anchors.fill: parent; onClicked: root.shown = false }  // click to dismiss
         radius: 18
         color: "#232839"
         border.width: 1

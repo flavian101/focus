@@ -155,6 +155,10 @@ int runSelfTest(QApplication&, const QString& screenshotDir) {
 
     // In-memory database + no real window detection: the test never touches your data.
     FocusBackend backend(":memory:", std::make_unique<focus::NullActivitySource>(), /*persistSettings=*/false);
+    // Freeze "what time is it" for water and meals at 09:50, so the test does not depend on when it runs.
+    backend.setLocalTimeForTesting(QDateTime(QDate::currentDate(), QTime(9, 50)));
+    QStringList notes;
+    QObject::connect(&backend, &FocusBackend::notification, [&notes](const QString& title, const QString&) { notes << title; });
     seedHistory(backend.database());
     seedPlan(backend.database());
     backend.refreshStats();
@@ -210,6 +214,40 @@ int runSelfTest(QApplication&, const QString& screenshotDir) {
     wait(600);
     shot(window, screenshotDir, "3b-today-teal");
     backend.setAccent(QStringLiteral("#7C5CFF"));
+
+    // ---- water and meals --------------------------------------------------------------------
+    check(notes.contains(QStringLiteral("Time for water")), "at 09:50 with no water logged, a water reminder fires");
+    check(backend.wellness().value(QStringLiteral("glasses")).toInt() == 0, "no glasses logged yet");
+    backend.logWater();
+    backend.logWater();
+    backend.logWater();
+    check(backend.wellness().value(QStringLiteral("glasses")).toInt() == 3, "three glasses logged");
+    backend.undoWater();
+    check(backend.wellness().value(QStringLiteral("glasses")).toInt() == 2, "undo removes one");
+    backend.setWaterGoal(10);
+    check(backend.wellness().value(QStringLiteral("goal")).toInt() == 10, "the water goal can be changed");
+    backend.setWaterGoal(8);
+
+    backend.setLocalTimeForTesting(QDateTime(QDate::currentDate(), QTime(12, 40)));  // lunch window is open
+    backend.advanceClockForTesting(60);
+    backend.tickNow();
+    backend.refreshWellness();
+    check(notes.contains(QStringLiteral("Lunch time")), "a meal reminder fires when its window is open");
+    const auto mealsBefore = backend.wellness().value(QStringLiteral("meals")).toList();
+    check(mealsBefore.size() == 3 && mealsBefore[1].toMap().value(QStringLiteral("state")).toString() == QLatin1String("due"), "lunch is due");
+    backend.setMeal(QStringLiteral("lunch"), QStringLiteral("ate"));
+    const auto mealsAfter = backend.wellness().value(QStringLiteral("meals")).toList();
+    check(mealsAfter[1].toMap().value(QStringLiteral("state")).toString() == QLatin1String("ate"), "lunch can be marked as eaten");
+    backend.setMeal(QStringLiteral("dinner"), QStringLiteral("ate"));
+    backend.setMeal(QStringLiteral("dinner"), QStringLiteral("clear"));
+    backend.logWater();
+    backend.setMeal(QStringLiteral("lunch"), QStringLiteral("clear"));  // leave lunch "due" for the screenshot
+
+    window->setProperty("tab", QStringLiteral("health"));
+    wait(1500);
+    shot(window, screenshotDir, "8-health");
+    window->setProperty("tab", QStringLiteral("today"));
+    wait(500);
 
     // ---- start a session from a planned task ----------------------------------------------
     const int loginId = taskIdByTitle(backend.tasks(), QStringLiteral("Finish the login endpoint"));

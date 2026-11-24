@@ -19,6 +19,17 @@ QString formatClock(std::int64_t seconds) {
 
 QString currentDay() { return QDate::currentDate().toString(Qt::ISODate); }
 
+QString stateName(focus::MealState s) {
+    switch (s) {
+        case focus::MealState::Upcoming: return QStringLiteral("upcoming");
+        case focus::MealState::Due:      return QStringLiteral("due");
+        case focus::MealState::Ate:      return QStringLiteral("ate");
+        case focus::MealState::Skipped:  return QStringLiteral("skipped");
+        case focus::MealState::Missed:   return QStringLiteral("missed");
+    }
+    return QStringLiteral("upcoming");
+}
+
 QString whenText(qint64 unixSeconds) {
     const auto when  = QDateTime::fromSecsSinceEpoch(unixSeconds);
     const auto days  = when.date().daysTo(QDate::currentDate());
@@ -56,6 +67,7 @@ FocusBackend::FocusBackend(const std::string& dbPath, std::unique_ptr<focus::Act
     refreshSnapshot();
     refreshStats();
     refreshTasks();
+    refreshWellness();
 }
 
 // ------------------------------------------------------------------------------ properties
@@ -304,12 +316,70 @@ void FocusBackend::advanceClockForTesting(int seconds) { offset_ += std::chrono:
 
 // ----------------------------------------------------------------------------- refreshing
 
+focus::LocalTime FocusBackend::localTime() const {
+    const QDateTime t = fixedLocal_.isValid() ? fixedLocal_ : QDateTime::currentDateTime();
+    return focus::LocalTime{t.date().toString(Qt::ISODate).toStdString(), t.time().hour() * 60 + t.time().minute()};
+}
+
+// -------------------------------------------------------------------------- water and meals
+
+void FocusBackend::logWater() {
+    controller_->logWater(localTime());
+    refreshWellness();
+}
+
+void FocusBackend::undoWater() {
+    controller_->undoWater(localTime());
+    refreshWellness();
+}
+
+void FocusBackend::setWaterGoal(int glasses) {
+    controller_->setWaterGoal(glasses);
+    refreshWellness();
+}
+
+void FocusBackend::setMeal(const QString& mealId, const QString& status) {
+    std::optional<focus::MealStatus> s;
+    if (status == QLatin1String("ate")) s = focus::MealStatus::Ate;
+    else if (status == QLatin1String("skipped")) s = focus::MealStatus::Skipped;
+    controller_->setMeal(localTime(), mealId.toStdString(), s);  // anything else clears the answer
+    refreshWellness();
+}
+
+void FocusBackend::refreshWellness() {
+    const auto w = controller_->wellness(localTime());
+    QVariantMap m;
+    m[QStringLiteral("glasses")]   = w.glasses;
+    m[QStringLiteral("goal")]      = w.goal;
+    m[QStringLiteral("expected")]  = w.expected;
+    m[QStringLiteral("behind")]    = std::max(0, w.expected - w.glasses);
+    m[QStringLiteral("onPace")]    = w.glasses >= w.expected;
+    m[QStringLiteral("startText")] = QString::fromStdString(focus::clockText(w.dayStartMinute));
+    m[QStringLiteral("endText")]   = QString::fromStdString(focus::clockText(w.dayEndMinute));
+    QVariantList meals;
+    for (const auto& meal : w.meals) {
+        QVariantMap mm;
+        mm[QStringLiteral("id")]     = QString::fromStdString(meal.id);
+        mm[QStringLiteral("name")]   = QString::fromStdString(meal.name);
+        mm[QStringLiteral("window")] = QStringLiteral("%1 \u2013 %2").arg(QString::fromStdString(focus::clockText(meal.startMinute)),
+                                                                          QString::fromStdString(focus::clockText(meal.endMinute)));
+        mm[QStringLiteral("state")]  = stateName(meal.state);
+        meals.push_back(mm);
+    }
+    m[QStringLiteral("meals")] = meals;
+    wellness_ = m;
+    emit wellnessChanged();
+}
+
 void FocusBackend::onTick() {
     if (const QString day = currentDay(); day != today_) {  // the app was left running past midnight
         today_ = day;
         refreshTasks();
         refreshStats();
     }
+    controller_->tickWellness(localTime(), now());  // water and meals run all day, session or not
+    if (++tickCount_ % 15 == 0) refreshWellness();  // pace and meal states drift with the clock
+
     const auto before = snap_.phase;
     try {
         controller_->tick(now());

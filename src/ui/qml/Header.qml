@@ -34,14 +34,14 @@ Item {
             Layout.alignment: Qt.AlignVCenter
             spacing: 2
             Txt { text: root.greeting(); size: 28; strong: true }
-            Txt { text: root.tab === "today" ? root.dateText() : "Your last 7 days"; dim: true; size: 14 }
+            Txt { text: root.tab === "insights" ? "Your last 7 days" : root.dateText(); dim: true; size: 14 }
         }
 
         // Two tabs with a highlight that slides between them.
         Item {
             Layout.alignment: Qt.AlignVCenter
             Layout.leftMargin: 10
-            implicitWidth: 206
+            implicitWidth: 308
             implicitHeight: 40
             Rectangle { anchors.fill: parent; radius: 20; color: Theme.surfaceHi
                 Behavior on color { ColorAnimation { duration: Theme.normal } } }
@@ -49,7 +49,7 @@ Item {
                 id: highlight
                 y: 3; height: parent.height - 6; radius: 17
                 width: 98
-                x: root.tab === "today" ? 4 : 104
+                x: 4 + 100 * Math.max(0, ["today", "health", "insights"].indexOf(root.tab))
                 color: Theme.accent
                 Behavior on x { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
                 Behavior on color { ColorAnimation { duration: Theme.normal } }
@@ -58,7 +58,7 @@ Item {
                 anchors.fill: parent
                 anchors.margins: 4
                 Repeater {
-                    model: [{ key: "today", label: "Today" }, { key: "insights", label: "Insights" }]
+                    model: [{ key: "today", label: "Today" }, { key: "health", label: "Health" }, { key: "insights", label: "Insights" }]
                     delegate: Item {
                         required property var modelData
                         width: 100; height: parent.height

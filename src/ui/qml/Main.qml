@@ -13,7 +13,7 @@ ApplicationWindow {
     color: Theme.bg
     Behavior on color { ColorAnimation { duration: Theme.normal } }
 
-    property string tab: "today"  // "today" | "insights"
+    property string tab: "today"  // "today" | "health" | "insights"
 
     // The saved settings drive the theme.
     Binding { target: Theme; property: "dark"; value: backend.darkMode }
@@ -45,6 +45,10 @@ ApplicationWindow {
             anchors.fill: parent
             active: backend.phase === "idle" && win.tab === "today"
             onFocusTask: (taskId, title, minutes) => win.openStartSheetFor(taskId, title, minutes)
+        }
+        HealthPage {
+            anchors.fill: parent
+            active: backend.phase === "idle" && win.tab === "health"
         }
         InsightsPage {
             anchors.fill: parent

@@ -58,6 +58,7 @@ int main(int argc, char* argv[]) {
         auto* openAction   = menu.addAction(QStringLiteral("Open Focus"));
         menu.addSeparator();
         auto* pauseAction  = menu.addAction(QStringLiteral("Pause"));
+        auto* waterAction  = menu.addAction(QStringLiteral("Log a glass of water"));
         auto* aiAction     = menu.addAction(QStringLiteral("Log an AI use"));
         auto* endAction    = menu.addAction(QStringLiteral("End session"));
         menu.addSeparator();
@@ -74,6 +75,7 @@ int main(int argc, char* argv[]) {
         QObject::connect(pauseAction, &QAction::triggered, [&backend] {
             if (backend.phase() == QLatin1String("paused")) backend.resume(); else backend.pause();
         });
+        QObject::connect(waterAction, &QAction::triggered, &backend, &FocusBackend::logWater);
         QObject::connect(aiAction, &QAction::triggered, &backend, &FocusBackend::logAiUse);
         QObject::connect(endAction, &QAction::triggered, &backend, &FocusBackend::abandon);
         QObject::connect(quitAction, &QAction::triggered, &app, &QApplication::quit);

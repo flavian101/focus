@@ -1,5 +1,6 @@
 #pragma once
 #include <QObject>
+#include <QDateTime>
 #include <QString>
 #include <QTimer>
 #include <QVariantList>
@@ -40,6 +41,9 @@ class FocusBackend : public QObject {
     Q_PROPERTY(QVariantMap plan READ plan NOTIFY tasksChanged)           // totals for today's plan
     Q_PROPERTY(int carryOverCount READ carryOverCount NOTIFY tasksChanged)  // unfinished tasks from earlier days
 
+    // --- water and meals ----------------------------------------------------------------
+    Q_PROPERTY(QVariantMap wellness READ wellness NOTIFY wellnessChanged)  // glasses, goal, pace, meals[]
+
     // --- appearance (saved between runs) ------------------------------------------------------
     Q_PROPERTY(bool darkMode READ darkMode WRITE setDarkMode NOTIFY appearanceChanged)
     Q_PROPERTY(QString accent READ accent WRITE setAccent NOTIFY appearanceChanged)
@@ -63,6 +67,7 @@ public:
     QVariantList week() const { return week_; }
     QVariantList recent() const { return recent_; }
 
+    QVariantMap wellness() const { return wellness_; }
     QString today() const { return today_; }
     QVariantList tasks() const { return tasks_; }
     QVariantMap plan() const { return plan_; }
@@ -93,17 +98,26 @@ public:
     Q_INVOKABLE int carryOver();
     Q_INVOKABLE void refreshTasks();
 
+    // Water and meals. setMeal's status is "ate", "skipped" or "clear".
+    Q_INVOKABLE void logWater();
+    Q_INVOKABLE void undoWater();
+    Q_INVOKABLE void setWaterGoal(int glasses);
+    Q_INVOKABLE void setMeal(const QString& mealId, const QString& status);
+    Q_INVOKABLE void refreshWellness();
+
     // Called when the app quits: a running session is ended and saved rather than lost.
     void shutdown();
 
     focus::Database& database() { return db_; }
     void advanceClockForTesting(int seconds);  // shifts "now" so a test can skip minutes in milliseconds
     void tickNow() { onTick(); }
+    void setLocalTimeForTesting(const QDateTime& when) { fixedLocal_ = when; }  // freezes "what time is it" for wellness
 
 signals:
     void changed();
     void statsChanged();
     void tasksChanged();
+    void wellnessChanged();
     void appearanceChanged();
     void notification(const QString& title, const QString& body);
     void errorOccurred(const QString& message);
@@ -113,6 +127,7 @@ private:
     Clock::time_point now() const { return Clock::now() + offset_; }
     void onTick();
     void refreshSnapshot();
+    focus::LocalTime localTime() const;
 
     focus::Database db_;
     std::unique_ptr<focus::ActivitySource> source_;
@@ -120,6 +135,10 @@ private:
     focus::ControllerSnapshot snap_;
     QTimer timer_;
     std::chrono::seconds offset_{0};
+
+    QDateTime fixedLocal_;  // only set by tests
+    int tickCount_ = 0;
+    QVariantMap wellness_;
 
     QString today_;
     QVariantList tasks_;

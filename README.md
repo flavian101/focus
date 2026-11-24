@@ -44,6 +44,12 @@ If your network blocks sqlite.org, install SQLite another way (e.g. vcpkg) and c
   you get at most 3 Musts, because if everything is a must, nothing is. Tick tasks off, drop them,
   or press Focus to start a session on one: its time is added to the task, and the check-in offers
   to mark it done. Unfinished tasks from earlier days can be carried over in one click.
+- **Health**: water and meals, all day while Focus runs in the tray (even with the window closed).
+  Water is a *pace*, not a timer: pick a daily goal and you are nudged only when you fall behind the
+  pace for your waking day, never right after logging a glass. Meals use windows (breakfast, lunch,
+  dinner): you are reminded when a window opens and every 30 minutes until you tap "I ate" or "Skip".
+  Reminders are held back while you are away from the keyboard and appear when you return.
+  The tray menu has "Log a glass of water".
 - **Insights**: animated summary cards and a weekly chart, with recent sessions and AI use.
 - A live session screen with a progress ring and AI-budget tracker, a check-in sheet, a tray icon,
   and light/dark themes with a choice of accent colours.
@@ -111,7 +117,7 @@ which is why it can be unit-tested without a clock, a window, or a database.
 
 ## Roadmap
 
-- Hydration and meal reminders (water log, meal windows)
+- Editable meal times and waking hours (a settings page)
 - All-day activity tracking, a daily review, then an optional local-model summary
 - Global hotkeys in the Qt window (the tray menu covers them for now), a settings page, custom icon
 - Break flow after a session (short/long breaks) on top of the Scheduler
