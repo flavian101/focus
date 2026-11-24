@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "controller/SessionController.h"
+#include "storage/ActivityRepository.h"
 #include "storage/CheckInRepository.h"
 #include "storage/Migrations.h"
 #include "storage/SessionRepository.h"
@@ -346,4 +347,97 @@ TEST_CASE("wellness: it can be switched off") {
     SessionController quiet(rig.db, rig.source, cfg, [&](const Notification& n) { seen.push_back(n.title); });
     quiet.tickWellness(local(10 * 60), t0);
     CHECK(seen.empty());
+}
+
+// ------------------------------------------------------------------------------ all-day activity
+
+namespace {
+// Runs the tracker once every 5 s from minute `startMinute` for `minutes` minutes.
+void trackFor(Rig& rig, int startMinute, int minutes, std::chrono::seconds& clockSeconds) {
+    const int samples = minutes * 12;
+    for (int i = 0; i < samples; ++i) {
+        rig.controller.trackActivity(local(startMinute + (i * 5) / 60), t0 + clockSeconds);
+        clockSeconds += 5s;
+    }
+}
+int secondsIn(const DaySummary& s, ActivityCategory c) { return static_cast<int>(s.secondsByCategory[static_cast<std::size_t>(c)]); }
+}  // namespace
+
+TEST_CASE("activity: app names and categories are recorded, never window titles") {
+    Rig rig;
+    rig.source.window = ForegroundWindow{"Code.exe", "secret-plans.md - Visual Studio Code"};
+    std::chrono::seconds clock{0};
+    trackFor(rig, 9 * 60, 10, clock);
+
+    auto day = rig.controller.daySummary("2026-11-23");
+    CHECK(secondsIn(day, ActivityCategory::Focus) >= 590);  // ~10 minutes (the last sample is still "held")
+    REQUIRE_FALSE(day.topApps.empty());
+    CHECK(day.topApps[0].app == "code");                    // normalised process name
+    for (const auto& a : day.topApps) CHECK(a.app.find("secret") == std::string::npos);
+}
+
+TEST_CASE("activity: finished minutes are saved, recent ones stay buffered, and both show in the summary") {
+    Rig rig;
+    std::chrono::seconds clock{0};
+    trackFor(rig, 9 * 60, 12, clock);  // 09:00 to 09:12; flushes happen as the clock passes the 6-minute hold-back
+
+    CHECK_FALSE(ActivityRepository(rig.db).forDay("2026-11-23").empty());   // older minutes already on disk
+    auto day = rig.controller.daySummary("2026-11-23");
+    CHECK(secondsIn(day, ActivityCategory::Focus) >= 700);                  // saved + buffered together
+
+    rig.controller.flushActivity();
+    CHECK(secondsIn(rig.controller.daySummary("2026-11-23"), ActivityCategory::Focus) == secondsIn(day, ActivityCategory::Focus));
+}
+
+TEST_CASE("activity: an absence is moved from the app to Away, including the part already credited") {
+    Rig rig;
+    std::chrono::seconds clock{0};
+    trackFor(rig, 9 * 60, 10, clock);          // ten minutes at the keyboard
+    rig.source.idle = 5min;                    // the idle counter has just reached the threshold
+    rig.controller.trackActivity(local(9 * 60 + 10), t0 + clock);
+    clock += 5s;
+    rig.source.idle = 5min + 5s;
+    rig.controller.trackActivity(local(9 * 60 + 10), t0 + clock);
+
+    auto day = rig.controller.daySummary("2026-11-23");
+    CHECK(secondsIn(day, ActivityCategory::Away) >= 300);
+    CHECK(secondsIn(day, ActivityCategory::Focus) <= 305);   // about 5 real minutes of work, not 10
+}
+
+TEST_CASE("activity: a long gap (laptop asleep) is not credited") {
+    Rig rig;
+    std::chrono::seconds clock{0};
+    trackFor(rig, 9 * 60, 1, clock);
+    const auto before = secondsIn(rig.controller.daySummary("2026-11-23"), ActivityCategory::Focus);
+    rig.controller.trackActivity(local(11 * 60), t0 + 2h);  // two hours later
+    rig.controller.flushActivity();
+    CHECK(secondsIn(rig.controller.daySummary("2026-11-23"), ActivityCategory::Focus) - before <= 15);
+}
+
+TEST_CASE("activity: pausing tracking records nothing, is remembered, and the pause is not credited") {
+    Rig rig;
+    std::chrono::seconds clock{0};
+    trackFor(rig, 9 * 60, 2, clock);
+    rig.controller.setTrackingEnabled(false);
+    const auto saved = secondsIn(rig.controller.daySummary("2026-11-23"), ActivityCategory::Focus);
+    trackFor(rig, 9 * 60 + 2, 30, clock);                    // thirty minutes while paused
+    CHECK(secondsIn(rig.controller.daySummary("2026-11-23"), ActivityCategory::Focus) == saved);
+
+    SessionController reopened(rig.db, rig.source, Configuration::defaults());
+    CHECK_FALSE(reopened.trackingEnabled());                 // the choice survived a restart
+
+    rig.controller.setTrackingEnabled(true);
+    rig.controller.trackActivity(local(10 * 60), t0 + clock);
+    clock += 5s;
+    rig.controller.trackActivity(local(10 * 60), t0 + clock);
+    CHECK(secondsIn(rig.controller.daySummary("2026-11-23"), ActivityCategory::Focus) - saved <= 10);  // only the 5 s after resuming
+}
+
+TEST_CASE("activity: a day's data can be deleted, buffered minutes included") {
+    Rig rig;
+    std::chrono::seconds clock{0};
+    trackFor(rig, 9 * 60, 12, clock);
+    rig.controller.clearActivity("2026-11-23");
+    CHECK(rig.controller.daySummary("2026-11-23").activeSeconds == 0);
+    CHECK(ActivityRepository(rig.db).forDay("2026-11-23").empty());
 }

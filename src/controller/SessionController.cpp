@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "services/Reminders.h"
+#include "storage/ActivityRepository.h"
 #include "storage/CheckInRepository.h"
 #include "storage/SessionRepository.h"
 #include "storage/SettingsRepository.h"
@@ -29,6 +30,7 @@ SessionController::SessionController(Database& db, ActivitySource& source, Confi
         for (auto& reminder : defaultReminders()) scheduler_.add(std::move(reminder));
     }
     wellness_.setWaterGoal(SettingsRepository(db_).getInt("water_goal", config_.water.goalGlasses));
+    trackingEnabled_ = SettingsRepository(db_).getInt("tracking", 1) != 0;
 }
 
 bool SessionController::start(SessionPlan plan, CheckIn before, Clock::time_point now) {
@@ -160,6 +162,68 @@ void SessionController::submitAfterCheckIn(CheckIn after) {
 }
 
 void SessionController::skipAfterCheckIn() { awaitingCheckIn_ = false; }
+
+// ------------------------------------------------------------------------------ all-day activity
+
+void SessionController::trackActivity(const LocalTime& local, Clock::time_point now) {
+    if (!trackingEnabled_) return;
+
+    if (!ambientSampled_ || now - lastAmbient_ >= config_.ambientSampleInterval) {
+        ambientSampled_ = true;
+        lastAmbient_    = now;
+        const auto idle = source_.idleFor();
+        if (idle >= config_.awayThreshold) {
+            tracker_.recordAway(now, local, idle);
+        } else {
+            const auto window = source_.foreground();
+            ActivityCategory category = ActivityCategory::Neutral;
+            std::string app           = "unknown";
+            if (window) {
+                category = classifier_.classify(*window);
+                if (!window->processName.empty()) app = normalizedProcessName(window->processName);  // never the title
+            }
+            tracker_.record(now, local, category, app);
+        }
+    }
+
+    if (now - lastFlush_ >= config_.activityFlushInterval) {
+        lastFlush_ = now;
+        // Hold buckets back a little longer than the away threshold: that window is how far back
+        // recordAway() may need to reach to correct what it already credited.
+        const int holdBackMinutes = static_cast<int>(config_.awayThreshold.count() / 60) + 1;
+        ActivityRepository(db_).addSeconds(tracker_.takeFlushable(local, holdBackMinutes));
+    }
+}
+
+void SessionController::flushActivity() { ActivityRepository(db_).addSeconds(tracker_.takeAll()); }
+
+void SessionController::setTrackingEnabled(bool enabled) {
+    if (enabled == trackingEnabled_) return;
+    trackingEnabled_ = enabled;
+    SettingsRepository(db_).setInt("tracking", enabled ? 1 : 0);
+    if (!enabled) {
+        flushActivity();    // keep what was recorded so far
+        tracker_.forget();  // and do not credit the time tracking was off
+    }
+}
+
+DaySummary SessionController::daySummary(const std::string& day) {
+    auto buckets = ActivityRepository(db_).forDay(day);
+    for (const auto& pending : tracker_.pending()) {  // not saved yet, but part of today
+        if (pending.day != day) continue;
+        const auto same = std::find_if(buckets.begin(), buckets.end(), [&](const ActivityBucket& b) {
+            return b.minuteOfDay == pending.minuteOfDay && b.category == pending.category && b.app == pending.app;
+        });
+        if (same != buckets.end()) same->seconds += pending.seconds;
+        else buckets.push_back(pending);
+    }
+    return summarizeDay(buckets);
+}
+
+void SessionController::clearActivity(const std::string& day) {
+    tracker_.discardDay(day);
+    ActivityRepository(db_).clearDay(day);
+}
 
 // ---------------------------------------------------------------------------- water and meals
 

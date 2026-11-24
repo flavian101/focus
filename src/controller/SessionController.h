@@ -9,7 +9,9 @@
 
 #include "core/ActivitySource.h"
 #include "core/CheckIn.h"
+#include "core/ActivityTracker.h"
 #include "core/Configuration.h"
+#include "core/DaySummary.h"
 #include "core/DayPlan.h"
 #include "core/Task.h"
 #include "core/Wellness.h"
@@ -119,6 +121,15 @@ public:
     // notify callback only while the user is at the keyboard.
     void tickWellness(const LocalTime& local, Clock::time_point now);
 
+    // ---- all-day activity: category and app name per minute, with or without a session ----------
+    // Call about once a second. It samples every few seconds and saves finished minutes every minute.
+    void trackActivity(const LocalTime& local, Clock::time_point now);
+    void flushActivity();  // save everything still buffered: call when the app quits
+    bool trackingEnabled() const { return trackingEnabled_; }
+    void setTrackingEnabled(bool enabled);  // saved; pausing does not credit the time it was off
+    DaySummary daySummary(const std::string& day);  // what is saved plus what is still buffered
+    void clearActivity(const std::string& day);
+
     ControllerSnapshot snapshot(Clock::time_point now) const;
     StatsReport stats(int days);
     std::vector<SessionSummary> recentSessions(int limit);
@@ -136,6 +147,12 @@ private:
     ActivitySource& source_;
     Configuration config_;
     NotifyFn notify_;
+
+    ActivityTracker tracker_;
+    bool trackingEnabled_ = true;
+    bool ambientSampled_  = false;
+    Clock::time_point lastAmbient_{};
+    Clock::time_point lastFlush_{};
 
     WellnessEngine wellness_;
     bool wellnessChecked_ = false;
