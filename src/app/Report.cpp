@@ -22,7 +22,8 @@ void printSessionSummary(const SessionSummary& s) {
               << "Time in:    focus " << formatDuration(s.secondsIn(ActivityCategory::Focus))
               << ", other " << formatDuration(s.secondsIn(ActivityCategory::Neutral))
               << ", distraction " << formatDuration(s.secondsIn(ActivityCategory::Distraction))
-              << ", AI " << formatDuration(s.secondsIn(ActivityCategory::AiAssistant)) << "\n"
+              << ", AI " << formatDuration(s.secondsIn(ActivityCategory::AiAssistant))
+              << ", away " << formatDuration(s.secondsIn(ActivityCategory::Away)) << "\n"
               << "AI visits:  " << s.aiTotal();
     if (s.aiBudget) std::cout << " (budget " << *s.aiBudget << ")";
     std::cout << "\n";
@@ -31,7 +32,8 @@ void printSessionSummary(const SessionSummary& s) {
 void printReport(const StatsReport& r, int days) {
     std::cout << "\nLast " << days << " days\n"
               << "  Sessions:    " << r.sessionsCompleted << " completed, " << r.sessionsAbandoned << " abandoned\n"
-              << "  Focus time:  " << formatDuration(r.focusSeconds) << "\n"
+              << "  Focus time:  " << formatDuration(r.focusSeconds) << " (away from keyboard: "
+              << formatDuration(r.awaySeconds) << ")\n"
               << "  AI use:      " << oneDecimal(r.aiVisitsPerSession) << " visits/session, "
               << oneDecimal(r.aiTimeShare * 100.0) << "% of tracked time, " << r.sessionsOverAiBudget
               << " session(s) over budget\n";

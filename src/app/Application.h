@@ -5,6 +5,7 @@
 
 #include "core/CheckIn.h"
 #include "core/Configuration.h"
+#include "core/Scheduler.h"
 #include "core/SessionManager.h"
 #include "platform/Hotkeys.h"
 #include "platform/SystemTray.h"
@@ -43,6 +44,8 @@ private:
     Configuration config_;
     ActivityClassifier classifier_;
     SessionManager session_;
+    Scheduler scheduler_;
+    bool present_ = true;  // false while the user is away from the keyboard
 
     HWND hwnd_ = nullptr;
     std::unique_ptr<win::TrayIcon> tray_;

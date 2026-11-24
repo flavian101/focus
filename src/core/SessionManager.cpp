@@ -19,16 +19,18 @@ bool SessionManager::start(SessionPlan plan, Clock::time_point now) {
     summary_.approach       = std::move(plan.approach);
     summary_.plannedSeconds = std::chrono::duration_cast<std::chrono::seconds>(plan.duration).count();
     summary_.aiBudget       = plan.aiBudget;
+    summary_.taskId         = plan.taskId;
     summary_.startedAt      = unixNow();
 
     spent_.fill(Clock::duration::zero());
     lastCategory_         = ActivityCategory::Neutral;
+    categoryBeforeAway_   = ActivityCategory::Neutral;
     lastSampleAt_         = now;
     budgetExceededEmitted_ = false;
 
     timer_.start(std::chrono::duration_cast<Timer::Seconds>(plan.duration), now);
     state_ = SessionState::Focusing;
-    emit(SessionEvent::Type::Started);
+    notifyListener(SessionEvent::Type::Started);
     return true;
 }
 
@@ -37,7 +39,7 @@ void SessionManager::pause(Clock::time_point now) {
     creditElapsed(now);  // settle up before the clock stops counting
     timer_.pause(now);
     state_ = SessionState::Paused;
-    emit(SessionEvent::Type::Paused);
+    notifyListener(SessionEvent::Type::Paused);
 }
 
 void SessionManager::resume(Clock::time_point now) {
@@ -45,7 +47,7 @@ void SessionManager::resume(Clock::time_point now) {
     timer_.resume(now);
     lastSampleAt_ = now;  // time spent paused is credited to nobody
     state_        = SessionState::Focusing;
-    emit(SessionEvent::Type::Resumed);
+    notifyListener(SessionEvent::Type::Resumed);
 }
 
 void SessionManager::tick(Clock::time_point now) {
@@ -66,34 +68,60 @@ void SessionManager::recordActivity(ActivityCategory category, Clock::time_point
     creditElapsed(now);
 
     // A "visit" is a switch INTO an AI tool, not every sample spent inside it.
-    if (category == ActivityCategory::AiAssistant && lastCategory_ != ActivityCategory::AiAssistant) {
+    // Walking away and coming back to the same AI window is not a new visit.
+    const auto before = lastCategory_ == ActivityCategory::Away ? categoryBeforeAway_ : lastCategory_;
+    if (category == ActivityCategory::AiAssistant && before != ActivityCategory::AiAssistant) {
         ++summary_.aiVisits;
-        emit(SessionEvent::Type::AiVisit);
+        notifyListener(SessionEvent::Type::AiVisit);
         checkAiBudget();
     }
     lastCategory_ = category;
 }
 
+void SessionManager::recordAway(std::chrono::seconds idleFor, Clock::time_point now) {
+    if (state_ != SessionState::Focusing) return;
+    creditElapsed(now);  // settle everything up to now into the current category first
+
+    if (lastCategory_ != ActivityCategory::Away) {
+        // First sample of this absence. Without input the foreground window cannot have changed,
+        // so the whole idle stretch was spent in lastCategory_. Move it over, capped at what that
+        // category actually has (the idle period may have begun before the session did).
+        const auto from = static_cast<std::size_t>(lastCategory_);
+        const auto to   = static_cast<std::size_t>(ActivityCategory::Away);
+        const auto move = std::min(std::chrono::duration_cast<Clock::duration>(idleFor), spent_[from]);
+        spent_[from] -= move;
+        spent_[to] += move;
+        categoryBeforeAway_ = lastCategory_;
+        lastCategory_       = ActivityCategory::Away;
+        refreshSummarySeconds();
+    }
+    // Later samples need no move: creditElapsed() already credits Away while lastCategory_ is Away.
+}
+
 void SessionManager::logManualAiUse(Clock::time_point /*now*/) {
     if (!isActive()) return;
     ++summary_.aiManualLogs;
-    emit(SessionEvent::Type::AiVisit);
+    notifyListener(SessionEvent::Type::AiVisit);
     checkAiBudget();
 }
 
 void SessionManager::creditElapsed(Clock::time_point now) {
     const auto delta = std::max(now - lastSampleAt_, Clock::duration::zero());
-    const auto idx   = static_cast<std::size_t>(lastCategory_);
-    spent_[idx] += delta;
-    summary_.secondsByCategory[idx] =
-        std::chrono::duration_cast<std::chrono::seconds>(spent_[idx]).count();
+    spent_[static_cast<std::size_t>(lastCategory_)] += delta;
+    refreshSummarySeconds();
     lastSampleAt_ = now;
+}
+
+void SessionManager::refreshSummarySeconds() {
+    for (std::size_t i = 0; i < spent_.size(); ++i) {
+        summary_.secondsByCategory[i] = std::chrono::duration_cast<std::chrono::seconds>(spent_[i]).count();
+    }
 }
 
 void SessionManager::checkAiBudget() {
     if (summary_.aiBudget && summary_.aiTotal() > *summary_.aiBudget && !budgetExceededEmitted_) {
         budgetExceededEmitted_ = true;  // warn once, not on every later visit
-        emit(SessionEvent::Type::AiBudgetExceeded);
+        notifyListener(SessionEvent::Type::AiBudgetExceeded);
     }
 }
 
@@ -106,11 +134,11 @@ void SessionManager::finish(SessionOutcome outcome, Clock::time_point now) {
 
     timer_.stop();
     state_ = SessionState::Idle;  // summary_ stays readable until the next start()
-    emit(outcome == SessionOutcome::Completed ? SessionEvent::Type::Completed
+    notifyListener(outcome == SessionOutcome::Completed ? SessionEvent::Type::Completed
                                               : SessionEvent::Type::Abandoned);
 }
 
-void SessionManager::emit(SessionEvent::Type type) const {
+void SessionManager::notifyListener(SessionEvent::Type type) const {
     if (listener_) listener_(SessionEvent{type});
 }
 

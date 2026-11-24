@@ -1,10 +1,14 @@
 #pragma once
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "core/Activity.h"
 
 namespace focus {
+
+// "Code.exe" -> "code": lower case, without ".exe". The same name is used for rules and for activity history.
+std::string normalizedProcessName(std::string_view processName);
 
 // "If the app is <process> and/or the window title contains <text>, it counts as <category>."
 // Leave a field empty to ignore it. A rule with both fields empty never matches.

@@ -33,7 +33,11 @@ StatsReport summarize(const std::vector<SessionSummary>& sessions, const std::ve
         r.focusSeconds += s.activeSeconds;
         aiVisits += s.aiTotal();
         if (s.aiBudget && s.aiTotal() > *s.aiBudget) ++r.sessionsOverAiBudget;
-        for (auto sec : s.secondsByCategory) trackedSeconds += sec;
+        for (std::size_t i = 0; i < s.secondsByCategory.size(); ++i) {
+            if (i == static_cast<std::size_t>(ActivityCategory::Away)) continue;  // not present: not in the share
+            trackedSeconds += s.secondsByCategory[i];
+        }
+        r.awaySeconds += s.secondsIn(ActivityCategory::Away);
         aiSeconds += s.secondsIn(ActivityCategory::AiAssistant);
     }
     if (!sessions.empty()) r.aiVisitsPerSession = static_cast<double>(aiVisits) / sessions.size();

@@ -26,7 +26,7 @@ SessionSummary sampleSession() {
     s.aiBudget       = 2;
     s.aiVisits       = 1;
     s.aiManualLogs   = 1;
-    s.secondsByCategory = {1000, 100, 50, 250};  // focus, neutral, distraction, ai
+    s.secondsByCategory = {1000, 100, 50, 250, 75};  // focus, neutral, distraction, ai, away
     return s;
 }
 }  // namespace
@@ -35,9 +35,9 @@ TEST_CASE("migrate is idempotent and stamps the schema version") {
     auto db = Database::open(":memory:");
     CHECK(db.userVersion() == 0);
     migrate(db);
-    CHECK(db.userVersion() == 1);
+    CHECK(db.userVersion() == 5);
     CHECK_NOTHROW(migrate(db));  // second run changes nothing
-    CHECK(db.userVersion() == 1);
+    CHECK(db.userVersion() == 5);
 }
 
 TEST_CASE("a database from the future is refused") {
@@ -63,6 +63,7 @@ TEST_CASE("sessions round-trip through storage") {
     CHECK(*r.aiBudget == 2);
     CHECK(r.aiTotal() == 2);
     CHECK(r.secondsIn(ActivityCategory::AiAssistant) == 250);
+    CHECK(r.secondsIn(ActivityCategory::Away) == 75);
     CHECK(repo.startedSince(5000).empty());  // filter works
 }
 
@@ -140,4 +141,35 @@ TEST_CASE("a Transaction that is not committed rolls back") {
         tx.commit();
     }
     CHECK(repo.startedSince(0).size() == 1);
+}
+
+TEST_CASE("upgrading a v1 database keeps its data and gives new columns a default") {
+    auto db = Database::open(":memory:");
+    migrate(db, 1);  // an "old" database, as an earlier version of the app would have left it
+    db.exec("INSERT INTO sessions (goal, planned_s, active_s, started_at, ended_at, outcome)"
+            " VALUES ('written by v1', 60, 60, 1, 2, 'completed');");
+    CHECK(db.userVersion() == 1);
+
+    migrate(db);  // the upgrade a user gets when they install the new version
+    CHECK(db.userVersion() == 5);
+
+    auto rows = SessionRepository(db).startedSince(0);
+    REQUIRE(rows.size() == 1);
+    CHECK(rows[0].goal == "written by v1");
+    CHECK(rows[0].secondsIn(ActivityCategory::Away) == 0);  // DEFAULT 0
+}
+
+TEST_CASE("recent() returns the newest sessions first and respects the limit") {
+    auto db = freshDb();
+    SessionRepository repo(db);
+    for (int i = 1; i <= 5; ++i) {
+        auto s      = sampleSession();
+        s.goal      = "session " + std::to_string(i);
+        s.startedAt = 1000 * i;
+        repo.insert(s);
+    }
+    auto rows = repo.recent(3);
+    REQUIRE(rows.size() == 3);
+    CHECK(rows[0].goal == "session 5");
+    CHECK(rows[2].goal == "session 3");
 }

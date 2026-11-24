@@ -12,7 +12,8 @@ public:
     explicit SessionRepository(Database& db) : db_(db) {}
 
     std::int64_t insert(const SessionSummary& session);  // returns the new row id
-    std::vector<SessionSummary> startedSince(std::int64_t unixSeconds);
+    std::vector<SessionSummary> startedSince(std::int64_t unixSeconds);  // oldest first
+    std::vector<SessionSummary> recent(int limit);                       // newest first
 
 private:
     Database& db_;

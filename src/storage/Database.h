@@ -31,6 +31,7 @@ public:
     Statement& bind(int index, const std::string& value);
     Statement& bindNull(int index);
 
+    void reset();  // forget the last run and its bound values, so the statement can be used again
     bool step();  // true = a row is ready to read, false = finished
     void run();   // for INSERT/UPDATE/DDL: step once and expect "finished"
 

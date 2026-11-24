@@ -7,6 +7,9 @@ add_executable(focus
 )
 target_link_libraries(focus PRIVATE focus_core focus_services focus_storage focus_platform)
 focus_enable_warnings(focus)
+# `cmake --install` copies focus.exe to <prefix>/bin so it can live on your PATH.
+install(TARGETS focus RUNTIME DESTINATION bin)
+
 if(MINGW)
   target_link_options(focus PRIVATE -municode)  # needed for wmain() (UTF-16 command line) under MinGW
 endif()

@@ -46,6 +46,11 @@ Statement& Statement::bindNull(int index) {
     return *this;
 }
 
+void Statement::reset() {
+    sqlite3_reset(stmt_);  // its return value repeats the error of the previous step, which was already reported
+    sqlite3_clear_bindings(stmt_);
+}
+
 bool Statement::step() {
     const int rc = sqlite3_step(stmt_);
     if (rc == SQLITE_ROW) return true;

@@ -1,5 +1,6 @@
 #pragma once
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -11,9 +12,10 @@ enum class ActivityCategory {
     Neutral,      // anything we have no opinion about
     Distraction,  // feeds, video, games
     AiAssistant,  // chat assistants (ChatGPT, Claude, Gemini, ...)
+    Away,         // no keyboard/mouse input for a while (set from idle time, not from a window)
 };
 
-inline constexpr std::size_t kActivityCategoryCount = 4;
+inline constexpr std::size_t kActivityCategoryCount = 5;
 
 constexpr std::string_view categoryName(ActivityCategory c) {
     switch (c) {
@@ -21,8 +23,18 @@ constexpr std::string_view categoryName(ActivityCategory c) {
         case ActivityCategory::Neutral:     return "neutral";
         case ActivityCategory::Distraction: return "distraction";
         case ActivityCategory::AiAssistant: return "ai";
+        case ActivityCategory::Away:        return "away";
     }
     return "neutral";
+}
+
+constexpr std::optional<ActivityCategory> parseCategory(std::string_view s) {
+    if (s == "focus")       return ActivityCategory::Focus;
+    if (s == "neutral")     return ActivityCategory::Neutral;
+    if (s == "distraction") return ActivityCategory::Distraction;
+    if (s == "ai")          return ActivityCategory::AiAssistant;
+    if (s == "away")        return ActivityCategory::Away;
+    return std::nullopt;
 }
 
 // What the OS says is in front of the user right now, as plain UTF-8 text.
