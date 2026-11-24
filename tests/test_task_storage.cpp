@@ -136,7 +136,7 @@ TEST_CASE("upgrading a v2 database adds the plan tables and keeps sessions") {
     CHECK(db.userVersion() == 2);
 
     migrate(db);
-    CHECK(db.userVersion() == 4);
+    CHECK(db.userVersion() == 5);
     auto rows = SessionRepository(db).recent(5);
     REQUIRE(rows.size() == 1);
     CHECK(rows[0].goal == "before the plan existed");

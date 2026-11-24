@@ -9,7 +9,7 @@ namespace {
 
 // Rule: never edit a step that has shipped. To change the schema, append a new step.
 // Step N takes the database from version N to version N+1.
-constexpr std::array<const char*, 4> kSteps = {
+constexpr std::array<const char*, 5> kSteps = {
     // v0 -> v1
     R"sql(
     CREATE TABLE sessions (
@@ -90,6 +90,18 @@ constexpr std::array<const char*, 4> kSteps = {
         key   TEXT PRIMARY KEY,
         value TEXT NOT NULL
     );
+    )sql",
+    // v4 -> v5: all-day activity, one row per minute, category and app. App NAMES only (never window
+    // titles). The primary key makes "add seconds to this minute" a single upsert.
+    R"sql(
+    CREATE TABLE activity_minutes (
+        day           TEXT    NOT NULL,             -- local calendar day, 'YYYY-MM-DD'
+        minute_of_day INTEGER NOT NULL CHECK (minute_of_day BETWEEN 0 AND 1439),
+        category      TEXT    NOT NULL CHECK (category IN ('focus', 'neutral', 'distraction', 'ai', 'away')),
+        app           TEXT    NOT NULL,             -- e.g. 'code', 'chrome'; empty for 'away'
+        seconds       INTEGER NOT NULL CHECK (seconds > 0),
+        PRIMARY KEY (day, minute_of_day, category, app)
+    ) WITHOUT ROWID;
     )sql",
 };
 

@@ -97,7 +97,7 @@ TEST_CASE("upgrading a v3 database adds water, meals and settings and keeps task
     CHECK(db.userVersion() == 3);
 
     migrate(db);
-    CHECK(db.userVersion() == 4);
+    CHECK(db.userVersion() == 5);
     CHECK(TaskRepository(db).forDay("2026-11-23").size() == 1);
     CHECK_NOTHROW(WellnessRepository(db).addGlass("2026-11-23", 600, 1));
     CHECK_NOTHROW(SettingsRepository(db).set("k", "v"));
