@@ -9,7 +9,7 @@ namespace {
 
 // Rule: never edit a step that has shipped. To change the schema, append a new step.
 // Step N takes the database from version N to version N+1.
-constexpr std::array<const char*, 3> kSteps = {
+constexpr std::array<const char*, 4> kSteps = {
     // v0 -> v1
     R"sql(
     CREATE TABLE sessions (
@@ -65,6 +65,31 @@ constexpr std::array<const char*, 3> kSteps = {
 
     ALTER TABLE sessions ADD COLUMN task_id INTEGER REFERENCES tasks (id) ON DELETE SET NULL;
     CREATE INDEX idx_sessions_task ON sessions (task_id);
+    )sql",
+    // v3 -> v4: water and meals, plus a small key/value table for user settings.
+    R"sql(
+    CREATE TABLE water_log (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        day           TEXT    NOT NULL,             -- local calendar day, 'YYYY-MM-DD'
+        glasses       INTEGER NOT NULL CHECK (glasses > 0),
+        minute_of_day INTEGER NOT NULL CHECK (minute_of_day BETWEEN 0 AND 1439),
+        logged_at     INTEGER NOT NULL
+    );
+    CREATE INDEX idx_water_day ON water_log (day);
+
+    CREATE TABLE meal_log (
+        id        INTEGER PRIMARY KEY AUTOINCREMENT,
+        day       TEXT    NOT NULL,
+        meal_id   TEXT    NOT NULL,
+        status    TEXT    NOT NULL CHECK (status IN ('ate', 'skipped')),
+        logged_at INTEGER NOT NULL,
+        UNIQUE (day, meal_id)                       -- one answer per meal per day; changing it replaces it
+    );
+
+    CREATE TABLE settings (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
     )sql",
 };
 
