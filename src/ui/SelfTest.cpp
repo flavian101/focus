@@ -142,6 +142,12 @@ void seedActivity(focus::Database& db) {
     seg(14, 25, 15, 40, C::Focus,       "code");
     seg(15, 40, 16, 0,  C::AiAssistant, "chrome");
     seg(16, 0, 16, 30,  C::Neutral,     "explorer");
+    // A long tail of small apps, to prove the list scrolls instead of spilling out of its card.
+    const char* small[] = {"notepad", "calc", "teams", "zoom", "figma", "postman", "terminal", "wt", "git", "docker", "slack-helper",
+                           "spotify", "steam", "discord", "obs", "vlc", "word", "excel", "powerpoint", "onenote", "mspaint", "snip",
+                           "settings", "taskmgr", "regedit"};
+    int minute = 16 * 60 + 30;
+    for (const char* app : small) { seg(minute / 60, minute % 60, (minute + 2) / 60, (minute + 2) % 60, C::Neutral, app); minute += 2; }
     focus::ActivityRepository(db).addSeconds(buckets);
 }
 
@@ -288,6 +294,7 @@ int runSelfTest(QApplication&, const QString& screenshotDir) {
     check(day.value(QStringLiteral("aiMinutes")).toDouble() > 25, "AI time is counted");
     check(day.value(QStringLiteral("awayMinutes")).toDouble() >= 44, "the lunch break shows as away");
     check(day.value(QStringLiteral("hours")).toList().size() == 24, "24 hour columns");
+    check(day.value(QStringLiteral("apps")).toList().size() > 20, "dozens of apps are kept (the list scrolls)");
     check(!day.value(QStringLiteral("apps")).toList().isEmpty() &&
           day.value(QStringLiteral("apps")).toList().first().toMap().value(QStringLiteral("app")).toString() == QLatin1String("code"),
           "code is the most used app");

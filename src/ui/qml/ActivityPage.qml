@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Controls.Basic
 import FocusUi
 
 // What your computer day looked like: time per hour by category, the apps you used, and how deep you worked.
@@ -155,28 +156,52 @@ Item {
                 Layout.fillWidth: true; Layout.fillHeight: true; Layout.preferredWidth: 2
                 hoverable: false; enterDelay: 450
                 Txt { id: appsTitle; text: "Where the time went"; strong: true; size: 16 }
-                Column {
+                Txt {
+                    anchors.right: parent.right; anchors.verticalCenter: appsTitle.verticalCenter
+                    visible: appList.count > 0
+                    text: appList.count + (appList.count === 1 ? " app" : " apps"); dim: true; size: 12
+                }
+
+                // A scrolling list: with dozens of apps it never spills out of its card.
+                ListView {
+                    id: appList
                     anchors.top: appsTitle.bottom; anchors.topMargin: 12
-                    width: parent.width
-                    spacing: 8
-                    Repeater {
-                        model: root.d.apps !== undefined ? root.d.apps : []
-                        delegate: Item {
-                            id: appRow
-                            required property var modelData
-                            required property int index
-                            property bool ready: false
-                            width: parent.width; height: 38
-                            Timer { interval: 400 + appRow.index * 70; running: true; onTriggered: appRow.ready = true }
-                            Rectangle { id: dot; x: 0; y: 6; width: 10; height: 10; radius: 5
-                                        color: Theme.categoryColor(appRow.modelData.category) }
-                            Txt { x: 20; width: parent.width - 20 - mins.width - 8; text: appRow.modelData.app; size: 14; elide: Text.ElideRight }
-                            Txt { id: mins; anchors.right: parent.right; text: root.minutesText(appRow.modelData.minutes); dim: true; size: 13 }
-                            Rectangle {
-                                x: 20; y: 26; height: 4; radius: 2; color: Qt.alpha(Theme.categoryColor(appRow.modelData.category), 0.85)
-                                width: appRow.ready ? (parent.width - 20) * appRow.modelData.share : 0
-                                Behavior on width { NumberAnimation { duration: 700; easing.type: Easing.OutCubic } }
-                            }
+                    anchors.bottom: parent.bottom
+                    anchors.left: parent.left; anchors.right: parent.right
+                    clip: true
+                    spacing: 6
+                    boundsBehavior: Flickable.StopAtBounds
+                    model: root.d.apps !== undefined ? root.d.apps : []
+
+                    ScrollBar.vertical: ScrollBar {
+                        policy: ScrollBar.AsNeeded
+                        implicitWidth: 8
+                        contentItem: Rectangle {
+                            implicitWidth: 6; radius: 3
+                            color: Theme.textDim
+                            opacity: parent.active || parent.pressed ? 0.8 : 0.35
+                            Behavior on opacity { NumberAnimation { duration: Theme.normal } }
+                        }
+                        background: Item {}
+                    }
+
+                    delegate: Item {
+                        id: appRow
+                        required property var modelData
+                        required property int index
+                        property bool ready: false
+                        width: ListView.view.width - 14   // leave room for the scrollbar
+                        height: 38
+                        // rows grow in one after another, but never wait long: only the first dozen are staggered
+                        Timer { interval: 300 + Math.min(appRow.index, 12) * 60; running: true; onTriggered: appRow.ready = true }
+                        Rectangle { x: 0; y: 6; width: 10; height: 10; radius: 5
+                                    color: Theme.categoryColor(appRow.modelData.category) }
+                        Txt { x: 20; width: parent.width - 20 - mins.width - 8; text: appRow.modelData.app; size: 14; elide: Text.ElideRight }
+                        Txt { id: mins; anchors.right: parent.right; text: root.minutesText(appRow.modelData.minutes); dim: true; size: 13 }
+                        Rectangle {
+                            x: 20; y: 26; height: 4; radius: 2; color: Qt.alpha(Theme.categoryColor(appRow.modelData.category), 0.85)
+                            width: appRow.ready ? (parent.width - 20) * appRow.modelData.share : 0
+                            Behavior on width { NumberAnimation { duration: 700; easing.type: Easing.OutCubic } }
                         }
                     }
                 }

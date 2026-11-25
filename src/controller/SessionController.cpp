@@ -217,7 +217,7 @@ DaySummary SessionController::daySummary(const std::string& day) {
         if (same != buckets.end()) same->seconds += pending.seconds;
         else buckets.push_back(pending);
     }
-    return summarizeDay(buckets);
+    return summarizeDay(buckets, 60);  // a long list is fine: the UI scrolls it
 }
 
 void SessionController::clearActivity(const std::string& day) {
