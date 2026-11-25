@@ -39,6 +39,30 @@ std::vector<ActivityBucket> ActivityRepository::forDay(const std::string& day) {
     return out;
 }
 
+void ActivityRepository::recategorize(const std::string& day, const std::string& app, std::optional<ActivityCategory> onlyFrom,
+                                      ActivityCategory to) {
+    if (to == ActivityCategory::Away) return;
+    std::vector<ActivityBucket> toMove;
+    for (auto& b : forDay(day)) {
+        if (b.app != app || b.category == to || b.category == ActivityCategory::Away) continue;
+        if (onlyFrom && b.category != *onlyFrom) continue;
+        toMove.push_back(std::move(b));
+    }
+    if (toMove.empty()) return;
+
+    Transaction tx(db_);
+    auto del = db_.prepare("DELETE FROM activity_minutes WHERE day = ?1 AND minute_of_day = ?2 AND category = ?3 AND app = ?4;");
+    for (const auto& b : toMove) {
+        del.bind(1, b.day).bind(2, b.minuteOfDay).bind(3, std::string(categoryName(b.category))).bind(4, b.app);
+        del.run();
+        del.reset();
+    }
+    tx.commit();
+    auto relabelled = toMove;
+    for (auto& b : relabelled) b.category = to;
+    addSeconds(relabelled);  // upsert: merges with any time already under the new category
+}
+
 void ActivityRepository::clearDay(const std::string& day) {
     auto st = db_.prepare("DELETE FROM activity_minutes WHERE day = ?1;");
     st.bind(1, day);

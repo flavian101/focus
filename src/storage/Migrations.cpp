@@ -9,7 +9,7 @@ namespace {
 
 // Rule: never edit a step that has shipped. To change the schema, append a new step.
 // Step N takes the database from version N to version N+1.
-constexpr std::array<const char*, 5> kSteps = {
+constexpr std::array<const char*, 6> kSteps = {
     // v0 -> v1
     R"sql(
     CREATE TABLE sessions (
@@ -102,6 +102,14 @@ constexpr std::array<const char*, 5> kSteps = {
         seconds       INTEGER NOT NULL CHECK (seconds > 0),
         PRIMARY KEY (day, minute_of_day, category, app)
     ) WITHOUT ROWID;
+    )sql",
+    // v5 -> v6: the user's own corrections ("this app is focus work"). App names only.
+    R"sql(
+    CREATE TABLE app_rules (
+        app        TEXT PRIMARY KEY,
+        category   TEXT    NOT NULL CHECK (category IN ('focus', 'neutral', 'distraction', 'ai')),
+        created_at INTEGER NOT NULL
+    );
     )sql",
 };
 

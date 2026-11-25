@@ -86,7 +86,7 @@ TEST_CASE("upgrading a v4 database adds the activity table and keeps tasks") {
     CHECK(db.userVersion() == 4);
 
     migrate(db);
-    CHECK(db.userVersion() == 5);
+    CHECK(db.userVersion() == 6);
     CHECK(TaskRepository(db).forDay("2026-11-23").size() == 1);
     CHECK_NOTHROW(ActivityRepository(db).addSeconds({bucket("2026-11-23", 600, Cat::Focus, "code", 30)}));
 }

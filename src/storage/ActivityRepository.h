@@ -1,4 +1,5 @@
 #pragma once
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -16,6 +17,10 @@ public:
     void addSeconds(const std::vector<ActivityBucket>& buckets);
 
     std::vector<ActivityBucket> forDay(const std::string& day);  // oldest minute first
+    // Re-label saved time for one app on one day. With onlyFrom set, only time in that category moves.
+    // A minute that already has time under the new category is merged, not duplicated.
+    void recategorize(const std::string& day, const std::string& app, std::optional<ActivityCategory> onlyFrom, ActivityCategory to);
+
     void clearDay(const std::string& day);
     void clearAll();
 

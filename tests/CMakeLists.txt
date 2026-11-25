@@ -12,6 +12,7 @@ add_executable(focus_tests
   test_task_storage.cpp
   test_wellness_storage.cpp
   test_activity_storage.cpp
+  test_app_rules.cpp
   test_timer.cpp
   test_tracking.cpp
   test_wellness.cpp
