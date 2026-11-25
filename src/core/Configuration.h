@@ -2,6 +2,7 @@
 #include <chrono>
 #include <vector>
 
+#include "core/Tracking.h"
 #include "core/Wellness.h"
 
 namespace focus {
@@ -18,6 +19,7 @@ struct Configuration {
     std::chrono::minutes dailyFocusCapacity{240};    // realistic focused work per day, for over-commit warnings
     WaterRule water;                                 // goal and waking hours for the water pace
     std::vector<MealWindow> meals = defaultMeals();  // when to expect breakfast, lunch and dinner
+    TrackingPolicy tracking;                         // how much detail to record, and when (work hours vs other)
     std::chrono::seconds ambientSampleInterval{5};   // how often all-day tracking looks at the foreground window
     std::chrono::seconds activityFlushInterval{60}; // how often finished minutes are saved to the database
     bool wellnessEnabled  = true;                    // water and meal reminders, all day while the app runs

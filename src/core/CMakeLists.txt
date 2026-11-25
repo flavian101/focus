@@ -7,6 +7,7 @@ add_library(focus_core STATIC
   SessionManager.cpp
   Statistics.cpp
   Timer.cpp
+  Tracking.cpp
   Wellness.cpp
 )
 # Include root is src/, so other code writes #include "core/Timer.h".

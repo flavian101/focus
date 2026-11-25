@@ -1,5 +1,6 @@
 #include "services/ActivityClassifier.h"
 
+#include <algorithm>
 #include <array>
 #include <string_view>
 
@@ -39,6 +40,11 @@ std::string normalizedProcessName(std::string_view name) {
     return s;
 }
 
+bool isBrowserProcess(std::string_view processName) {
+    const std::string name = normalizedProcessName(processName);
+    return std::find(kBrowsers.begin(), kBrowsers.end(), name) != kBrowsers.end();
+}
+
 ActivityClassifier::ActivityClassifier(std::vector<ActivityRule> rules) : rules_(std::move(rules)) {
     // Normalize once up front so classify() can compare cheaply.
     for (auto& r : rules_) {
@@ -51,13 +57,19 @@ ActivityCategory ActivityClassifier::classify(const ForegroundWindow& window) co
     const std::string process = normalizedProcessName(window.processName);
     const std::string title   = lowerAscii(window.title);
 
+    ActivityCategory fromRules = ActivityCategory::Neutral;
     for (const auto& r : rules_) {
         if (r.process.empty() && r.titleContains.empty()) continue;
         if (!r.process.empty() && r.process != process) continue;
         if (!r.titleContains.empty() && title.find(r.titleContains) == std::string::npos) continue;
-        return r.category;
+        fromRules = r.category;
+        break;
     }
-    return ActivityCategory::Neutral;
+
+    const auto custom = overrides_.find(process);
+    if (custom == overrides_.end()) return fromRules;
+    if (isBrowserProcess(process) && fromRules != ActivityCategory::Neutral) return fromRules;  // keep AI / distraction tabs
+    return custom->second;
 }
 
 std::vector<ActivityRule> ActivityClassifier::defaultRules() {

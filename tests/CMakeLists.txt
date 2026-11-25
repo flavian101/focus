@@ -13,6 +13,7 @@ add_executable(focus_tests
   test_wellness_storage.cpp
   test_activity_storage.cpp
   test_timer.cpp
+  test_tracking.cpp
   test_wellness.cpp
 )
 target_link_libraries(focus_tests PRIVATE focus_core focus_services focus_storage focus_controller doctest::doctest)

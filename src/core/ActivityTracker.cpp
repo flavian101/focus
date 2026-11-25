@@ -69,6 +69,27 @@ std::vector<ActivityBucket> ActivityTracker::takeAll() {
     return out;
 }
 
+void ActivityTracker::recategorize(const std::string& day, const std::string& app, std::optional<ActivityCategory> onlyFrom,
+                                   ActivityCategory to) {
+    if (to == ActivityCategory::Away) return;  // away is decided by the keyboard, not by the app
+
+    // The held "previous sample" will be credited at the next sample, so it must carry the new label too.
+    if (prev_ && prev_->local.day == day && prev_->app == app && prev_->category != to && prev_->category != ActivityCategory::Away &&
+        (!onlyFrom || prev_->category == *onlyFrom)) {
+        prev_->category = to;
+    }
+
+    std::vector<ActivityBucket> moved;
+    for (auto& b : buckets_) {
+        if (b.day != day || b.app != app || b.category == to || b.category == ActivityCategory::Away) continue;
+        if (onlyFrom && b.category != *onlyFrom) continue;
+        moved.push_back(b);
+        b.seconds = 0;
+    }
+    buckets_.erase(std::remove_if(buckets_.begin(), buckets_.end(), [](const ActivityBucket& b) { return b.seconds <= 0; }), buckets_.end());
+    for (const auto& m : moved) add(m.day, m.minuteOfDay, to, m.app, m.seconds);  // merges into an existing bucket if there is one
+}
+
 void ActivityTracker::discardDay(const std::string& day) {
     buckets_.erase(std::remove_if(buckets_.begin(), buckets_.end(), [&](const ActivityBucket& b) { return b.day == day; }),
                    buckets_.end());

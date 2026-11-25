@@ -1,4 +1,5 @@
 #pragma once
+#include <map>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -9,6 +10,10 @@ namespace focus {
 
 // "Code.exe" -> "code": lower case, without ".exe". The same name is used for rules and for activity history.
 std::string normalizedProcessName(std::string_view processName);
+
+// Is this a web browser? Browsers host many different things (docs, an AI chat, a video feed), so
+// one label for the whole app would be wrong. See ActivityClassifier::setOverrides().
+bool isBrowserProcess(std::string_view processName);
 
 // "If the app is <process> and/or the window title contains <text>, it counts as <category>."
 // Leave a field empty to ignore it. A rule with both fields empty never matches.
@@ -29,11 +34,17 @@ public:
 
     ActivityCategory classify(const ForegroundWindow& window) const;
 
+    // The user's own corrections: "this app is <category>". They win over the built-in rules, with
+    // one exception: for a BROWSER the override only replaces "no opinion" (Neutral), so an AI chat
+    // or a video feed in a tab is still recognised. Keys are normalised app names ("code", not "Code.exe").
+    void setOverrides(std::map<std::string, ActivityCategory> overrides) { overrides_ = std::move(overrides); }
+
     // AI tools first, then distractions, then focus tools.
     static std::vector<ActivityRule> defaultRules();
 
 private:
     std::vector<ActivityRule> rules_;
+    std::map<std::string, ActivityCategory> overrides_;
 };
 
 }  // namespace focus

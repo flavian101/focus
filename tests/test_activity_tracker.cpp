@@ -105,3 +105,45 @@ TEST_CASE("tracker: forgetting skips the pause, and a day can be discarded") {
     t.discardDay("2026-11-23");
     CHECK(t.pending().empty());
 }
+
+TEST_CASE("tracker: recategorizing an app moves its buffered time, and merges with what is there") {
+    ActivityTracker t;
+    t.record(t0, at(600), Cat::Neutral, "figma");
+    t.record(t0 + 5s, at(600), Cat::Focus, "figma");        // 5 s neutral
+    t.record(t0 + 10s, at(600), Cat::Neutral, "figma");     // 5 s focus
+    t.record(t0 + 15s, at(600), Cat::Neutral, "slack");     // 5 s neutral again
+    t.recategorize("2026-11-23", "figma", std::nullopt, Cat::Focus);
+    auto b = t.takeAll();
+    CHECK(secondsFor(b, Cat::Focus, "figma") == 15);        // all 15 s of figma (5 + 5 + 5), merged into one bucket
+    CHECK(secondsFor(b, Cat::Neutral, "figma") == 0);
+    CHECK(b.size() == 1);
+}
+
+TEST_CASE("tracker: recategorizing can be limited to one category (for browsers)") {
+    ActivityTracker t;
+    t.record(t0, at(600), Cat::Neutral, "chrome");
+    t.record(t0 + 5s, at(600), Cat::AiAssistant, "chrome");
+    t.record(t0 + 10s, at(600), Cat::Neutral, "chrome");
+    t.recategorize("2026-11-23", "chrome", Cat::Neutral, Cat::Focus);   // only the neutral part
+    auto b = t.takeAll();
+    CHECK(secondsFor(b, Cat::Focus, "chrome") == 5);
+    CHECK(secondsFor(b, Cat::AiAssistant, "chrome") == 5);              // the AI chat time is untouched
+}
+
+TEST_CASE("tracker: away time is never recategorized") {
+    ActivityTracker t;
+    t.record(t0, at(600), Cat::Away, "");
+    t.record(t0 + 5s, at(600), Cat::Away, "");
+    t.recategorize("2026-11-23", "", std::nullopt, Cat::Focus);
+    CHECK(secondsFor(t.takeAll(), Cat::Away) == 5);
+}
+
+TEST_CASE("tracker: recategorizing also relabels the sample that is still being held") {
+    ActivityTracker t;
+    t.record(t0, at(600), Cat::Neutral, "figma");
+    t.recategorize("2026-11-23", "figma", std::nullopt, Cat::Focus);   // the user just said "figma is focus"
+    t.record(t0 + 5s, at(600), Cat::Focus, "figma");                    // the held 5 s must not come out as Neutral
+    auto b = t.takeAll();
+    CHECK(secondsFor(b, Cat::Focus, "figma") == 5);
+    CHECK(secondsFor(b, Cat::Neutral, "figma") == 0);
+}

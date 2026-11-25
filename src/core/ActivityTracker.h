@@ -45,6 +45,10 @@ public:
     std::vector<ActivityBucket> takeAll();
     std::vector<ActivityBucket> pending() const { return buckets_; }  // a copy, for merging into reports
 
+    // Re-label buffered time for one app: "this app is really <to>". With onlyFrom set, only time
+    // currently in that category moves (used for browsers, so AI and distraction tabs are left alone).
+    void recategorize(const std::string& day, const std::string& app, std::optional<ActivityCategory> onlyFrom, ActivityCategory to);
+
     void discardDay(const std::string& day);
     void forget();  // drop the "previous sample" (tracking was paused) so the pause is not credited
 

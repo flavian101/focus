@@ -52,3 +52,31 @@ TEST_CASE("custom rules: first match wins and empty rules never match") {
     CHECK(c.classify({"chrome.exe", "memes"}) == ActivityCategory::Distraction);
     CHECK(c.classify({"notepad.exe", "memes"}) == ActivityCategory::Neutral);
 }
+
+TEST_CASE("a user override relabels an app that the built-in rules had no opinion about") {
+    ActivityClassifier c;
+    CHECK(c.classify({"figma.exe", "Design"}) == ActivityCategory::Neutral);
+    c.setOverrides({{"figma", ActivityCategory::Focus}});
+    CHECK(c.classify({"Figma.exe", "Design"}) == ActivityCategory::Focus);
+}
+
+TEST_CASE("a user override beats a built-in rule for a normal app") {
+    ActivityClassifier c;
+    CHECK(c.classify({"code.exe", "x"}) == ActivityCategory::Focus);
+    c.setOverrides({{"code", ActivityCategory::Distraction}});  // the user says so
+    CHECK(c.classify({"code.exe", "x"}) == ActivityCategory::Distraction);
+}
+
+TEST_CASE("a browser override is only the default: AI and distraction tabs are still recognised") {
+    ActivityClassifier c;
+    c.setOverrides({{"chrome", ActivityCategory::Focus}});                 // "my browser is for work"
+    CHECK(c.classify({"chrome.exe", "Docs - Google Chrome"}) == ActivityCategory::Focus);
+    CHECK(c.classify({"chrome.exe", "Claude - Google Chrome"}) == ActivityCategory::AiAssistant);
+    CHECK(c.classify({"chrome.exe", "Funny cats - YouTube - Google Chrome"}) == ActivityCategory::Distraction);
+}
+
+TEST_CASE("browsers are recognised by process name") {
+    CHECK(isBrowserProcess("Chrome.exe"));
+    CHECK(isBrowserProcess("msedge"));
+    CHECK_FALSE(isBrowserProcess("code.exe"));
+}
