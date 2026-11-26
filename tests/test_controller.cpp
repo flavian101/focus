@@ -18,8 +18,16 @@ const SessionController::Clock::time_point t0{};
 struct FakeSource : ActivitySource {
     std::optional<ForegroundWindow> window = ForegroundWindow{"Code.exe", "main.cpp - Visual Studio Code"};
     std::chrono::seconds idle{0};
+    InputCounts counts;        // what the "keyboard and mouse" did since the controller last asked
+    bool counting = false;     // whether the controller has asked this source to count input events
     std::optional<ForegroundWindow> foreground() override { return window; }
     std::chrono::seconds idleFor() override { return idle; }
+    void setInputCounting(bool enabled) override { counting = enabled; }
+    InputCounts takeInputCounts() override {
+        const InputCounts taken = counts;
+        counts                  = {};
+        return taken;
+    }
 };
 
 struct Rig {
@@ -563,4 +571,182 @@ TEST_CASE("rules: away cannot be assigned to an app") {
     Rig rig;
     rig.controller.setAppCategory("steam", ActivityCategory::Away, "2026-11-25");
     CHECK(rig.controller.appRules().empty());
+}
+
+// ---------------------------------------------------------------------------------- engagement
+
+namespace {
+void useMode(Rig& rig, TrackingMode duringWork) {
+    TrackingPolicy p;
+    p.duringWork = duringWork;
+    REQUIRE(rig.controller.setTrackingPolicy(p));
+}
+}  // namespace
+
+TEST_CASE("engagement: time at the keyboard is engaged, time just sitting in front of an app is not") {
+    Rig rig;  // Monday 09:00 is inside the default work hours
+    std::chrono::seconds clock{0};
+    trackFor(rig, 9 * 60, 2, clock);   // two minutes with input in every interval (idle stays at 0)
+    rig.source.idle = 30s;             // then two minutes with the app in front and nobody touching anything
+    trackFor(rig, 9 * 60 + 2, 2, clock);
+
+    auto day = rig.controller.daySummary("2026-11-23");
+    CHECK(day.hasEngagementData);
+    CHECK(secondsIn(day, ActivityCategory::Focus) >= 235);
+    CHECK(day.engagedSeconds >= 110);
+    CHECK(day.engagedSeconds <= 125);                              // about half of it: the first two minutes
+    CHECK(day.engagedShare(ActivityCategory::Focus) < 0.55);
+    CHECK(day.engagedShare(ActivityCategory::Focus) > 0.45);
+}
+
+TEST_CASE("engagement: a change of window or tab is counted, the same page again is not, and no title is kept") {
+    Rig rig;
+    std::chrono::seconds clock{0};
+    for (int i = 0; i < 24; ++i) {   // two minutes, sampled every 5 s, flipping between two tabs of the same browser
+        rig.source.window = ForegroundWindow{"msedge.exe", i % 2 == 0 ? "Inbox - Mail - Edge" : "Some private page - Edge"};
+        rig.controller.trackActivity(local(9 * 60 + (i * 5) / 60), t0 + clock);
+        clock += 5s;
+    }
+    auto flipping = rig.controller.daySummary("2026-11-23");
+    CHECK(flipping.foregroundChanges == 23);   // every sample after the first was a different tab
+
+    Rig calm;
+    std::chrono::seconds calmClock{0};
+    trackFor(calm, 9 * 60, 2, calmClock);      // the same window the whole time
+    CHECK(calm.controller.daySummary("2026-11-23").foregroundChanges == 0);
+
+    for (const auto& b : ActivityRepository(rig.db).forDay("2026-11-23")) {
+        CHECK(b.app.find("Inbox") == std::string::npos);   // app names only: the titles were never stored
+        CHECK(b.app.find("private") == std::string::npos);
+    }
+}
+
+TEST_CASE("engagement: a moment with no foreground window does not turn one switch into two") {
+    Rig rig;
+    std::chrono::seconds clock{0};
+    auto sample = [&](std::optional<ForegroundWindow> w) {
+        rig.source.window = w;
+        rig.controller.trackActivity(local(9 * 60), t0 + clock);
+        clock += 5s;
+    };
+    sample(ForegroundWindow{"Code.exe", "a"});
+    sample(std::nullopt);                          // mid alt-tab, Windows reports nothing
+    sample(ForegroundWindow{"chrome.exe", "b"});   // one real switch
+    sample(ForegroundWindow{"chrome.exe", "b"});
+    CHECK(rig.controller.daySummary("2026-11-23").foregroundChanges == 1);
+}
+
+TEST_CASE("engagement: Work mode never listens for scrolls, keys or clicks") {
+    Rig rig;
+    useMode(rig, TrackingMode::Work);
+    rig.source.counts = InputCounts{10, 20, 3};
+    std::chrono::seconds clock{0};
+    trackFor(rig, 9 * 60, 1, clock);
+
+    CHECK_FALSE(rig.source.counting);              // the source was never asked to count
+    CHECK(rig.source.counts.scrolls == 10);        // and nothing was even read from it
+    auto day = rig.controller.daySummary("2026-11-23");
+    CHECK(day.scrollEvents == 0);
+    CHECK(day.keyEvents == 0);
+    CHECK(day.clickEvents == 0);
+    CHECK(day.engagedSeconds > 0);                 // the engagement basics are still there
+}
+
+TEST_CASE("engagement: Detailed mode listens, and the counts land in the day") {
+    Rig rig;
+    useMode(rig, TrackingMode::Detailed);
+    std::chrono::seconds clock{0};
+    for (int i = 0; i < 24; ++i) {
+        rig.source.counts = InputCounts{2, 5, 1};   // what happened since the previous sample
+        rig.controller.trackActivity(local(9 * 60 + (i * 5) / 60), t0 + clock);
+        clock += 5s;
+    }
+    CHECK(rig.source.counting);
+    auto day = rig.controller.daySummary("2026-11-23");
+    CHECK(day.scrollEvents == 46);   // 23 intervals: the first sample has no interval behind it
+    CHECK(day.keyEvents == 115);
+    CHECK(day.clickEvents == 23);
+}
+
+TEST_CASE("engagement: listening stops at once when tracking is paused or the mode drops below Detailed") {
+    Rig rig;
+    useMode(rig, TrackingMode::Detailed);
+    std::chrono::seconds clock{0};
+    trackFor(rig, 9 * 60, 1, clock);
+    REQUIRE(rig.source.counting);
+
+    rig.controller.setTrackingEnabled(false);
+    CHECK_FALSE(rig.source.counting);              // right away, without waiting for the next tick
+
+    rig.controller.setTrackingEnabled(true);
+    trackFor(rig, 9 * 60 + 1, 1, clock);
+    CHECK(rig.source.counting);                    // back on, because the mode still allows it
+
+    useMode(rig, TrackingMode::Work);
+    rig.controller.trackActivity(local(9 * 60 + 2), t0 + clock);
+    CHECK_FALSE(rig.source.counting);              // the next tick notices the lower level
+}
+
+TEST_CASE("engagement: input counts gathered while away are discarded, not credited to a later moment") {
+    Rig rig;
+    useMode(rig, TrackingMode::Detailed);
+    std::chrono::seconds clock{0};
+    trackFor(rig, 9 * 60, 1, clock);
+
+    rig.source.idle   = 6min;                     // past the away threshold
+    rig.source.counts = InputCounts{9, 9, 9};
+    rig.controller.trackActivity(local(9 * 60 + 1), t0 + clock);
+    clock += 5s;
+    CHECK(rig.source.counts.scrolls == 0);         // drained, even though they were not used
+
+    rig.source.idle = 0s;
+    trackFor(rig, 9 * 60 + 2, 1, clock);
+    auto day = rig.controller.daySummary("2026-11-23");
+    CHECK(day.scrollEvents == 0);
+    CHECK(day.keyEvents == 0);
+}
+
+TEST_CASE("engagement: Private mode keeps engagement but still never the app name, and no input counts") {
+    Rig rig;
+    useMode(rig, TrackingMode::Private);
+    rig.source.counts = InputCounts{4, 4, 4};
+    std::chrono::seconds clock{0};
+    trackFor(rig, 9 * 60, 2, clock);
+
+    auto day = rig.controller.daySummary("2026-11-23");
+    CHECK(day.hasEngagementData);
+    CHECK(day.engagedSeconds > 0);
+    CHECK(day.scrollEvents == 0);
+    CHECK_FALSE(rig.source.counting);
+    for (const auto& a : day.topApps) CHECK(a.app.empty());
+}
+
+TEST_CASE("engagement: Off records nothing at all, including engagement") {
+    Rig rig;
+    useMode(rig, TrackingMode::Off);
+    std::chrono::seconds clock{0};
+    trackFor(rig, 9 * 60, 2, clock);
+    CHECK(rig.controller.daySummary("2026-11-23").hasEngagementData == false);
+    CHECK_FALSE(rig.source.counting);
+    CHECK(ActivityRepository(rig.db).forDay("2026-11-23").empty());
+}
+
+TEST_CASE("engagement: it survives being saved and reloaded, merged with what is still buffered") {
+    Rig rig;
+    useMode(rig, TrackingMode::Detailed);
+    std::chrono::seconds clock{0};
+    for (int i = 0; i < 12 * 12; ++i) {   // twelve minutes, so the older ones are flushed to the database
+        rig.source.counts = InputCounts{1, 2, 0};
+        rig.controller.trackActivity(local(9 * 60 + (i * 5) / 60), t0 + clock);
+        clock += 5s;
+    }
+    const auto before = rig.controller.daySummary("2026-11-23");
+    CHECK_FALSE(ActivityRepository(rig.db).forDay("2026-11-23").empty());   // some of it is already on disk
+
+    rig.controller.flushActivity();
+    const auto after = rig.controller.daySummary("2026-11-23");
+    CHECK(after.scrollEvents == before.scrollEvents);
+    CHECK(after.keyEvents == before.keyEvents);
+    CHECK(after.engagedSeconds == before.engagedSeconds);
+    CHECK(after.scrollEvents == 143);
 }

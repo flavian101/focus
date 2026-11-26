@@ -1,6 +1,7 @@
 #include "controller/SessionController.h"
 
 #include <algorithm>
+#include <functional>
 
 #include "services/Reminders.h"
 #include "storage/ActivityRepository.h"
@@ -231,18 +232,31 @@ void SessionController::skipAfterCheckIn() { awaitingCheckIn_ = false; }
 
 // ------------------------------------------------------------------------------ all-day activity
 
+void SessionController::updateInputCounting(bool wanted) {
+    if (wanted == inputCounting_) return;
+    inputCounting_ = wanted;
+    source_.setInputCounting(wanted);
+}
+
 void SessionController::trackActivity(const LocalTime& local, Clock::time_point now) {
     const TrackingMode mode = currentTrackingMode(local);
+    updateInputCounting(keepsInputCounts(mode));  // listen only while the mode allows it, and stop the moment it does not
     if (mode == TrackingMode::Off) {
         if (!tracker_.pending().empty()) flushActivity();  // keep what was recorded before the mode switched off
         tracker_.forget();                                // and do not credit the time tracking is off
+        haveForegroundKey_ = false;
         return;
     }
 
     if (!ambientSampled_ || now - lastAmbient_ >= config_.ambientSampleInterval) {
+        const bool hadPrevious = ambientSampled_;
+        const auto sinceLast   = std::chrono::duration_cast<std::chrono::seconds>(now - lastAmbient_);
         ambientSampled_ = true;
         lastAmbient_    = now;
         const auto idle = source_.idleFor();
+        // Drained on every sample, away or not, so a count never sits around and gets credited to the wrong moment.
+        const InputCounts counts = inputCounting_ ? source_.takeInputCounts() : InputCounts{};
+
         if (idle >= config_.awayThreshold) {
             tracker_.recordAway(now, local, idle);
         } else {
@@ -253,8 +267,28 @@ void SessionController::trackActivity(const LocalTime& local, Clock::time_point 
                 category = classifier_.classify(*window);
                 if (!window->processName.empty()) app = normalizedProcessName(window->processName);  // never the title
             }
+
+            // Engagement: numbers about HOW the computer was used, never about WHAT was on screen or typed.
+            SampleSignals engagement;
+            if (keepsEngagement(mode)) {
+                // Input arrived since the previous sample if the idle clock restarted after it.
+                engagement.input = hadPrevious && idle < std::max(sinceLast, std::chrono::seconds(1));
+                if (window) {
+                    // Only a hash, only in memory, only to notice that the window or tab changed. If Windows briefly
+                    // reports no window (mid alt-tab) the last one is kept, so one switch is not counted as two.
+                    const std::size_t key = std::hash<std::string>{}(window->processName + '\n' + window->title);
+                    if (haveForegroundKey_ && key != foregroundKey_) engagement.switches = 1;
+                    foregroundKey_     = key;
+                    haveForegroundKey_ = true;
+                }
+                if (keepsInputCounts(mode)) {
+                    engagement.scrollEvents = counts.scrolls;
+                    engagement.keyEvents    = counts.keys;
+                    engagement.clickEvents  = counts.clicks;
+                }
+            }
             // Private mode keeps the category (so "40 min of distraction" is still known) but not which app.
-            tracker_.record(now, local, category, keepsAppName(mode) ? app : std::string());
+            tracker_.record(now, local, category, keepsAppName(mode) ? app : std::string(), engagement);
         }
     }
 
@@ -274,8 +308,10 @@ void SessionController::setTrackingEnabled(bool enabled) {
     trackingEnabled_ = enabled;
     SettingsRepository(db_).setInt("tracking", enabled ? 1 : 0);
     if (!enabled) {
-        flushActivity();    // keep what was recorded so far
-        tracker_.forget();  // and do not credit the time tracking was off
+        updateInputCounting(false);  // stop listening right now, not at the next tick
+        flushActivity();             // keep what was recorded so far
+        tracker_.forget();           // and do not credit the time tracking was off
+        haveForegroundKey_ = false;
     }
 }
 
@@ -286,7 +322,7 @@ DaySummary SessionController::daySummary(const std::string& day) {
         const auto same = std::find_if(buckets.begin(), buckets.end(), [&](const ActivityBucket& b) {
             return b.minuteOfDay == pending.minuteOfDay && b.category == pending.category && b.app == pending.app;
         });
-        if (same != buckets.end()) same->seconds += pending.seconds;
+        if (same != buckets.end()) same->accumulate(pending);
         else buckets.push_back(pending);
     }
     return summarizeDay(buckets, 60);  // a long list is fine: the UI scrolls it

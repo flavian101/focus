@@ -1,6 +1,7 @@
 #pragma once
 #include <array>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -157,6 +158,7 @@ public:
 private:
     void onSessionEvent(const SessionEvent& event);
     void loadTrackingSettings();
+    void updateInputCounting(bool wanted);  // tells the source to start or stop counting scrolls, keys and clicks
     void sampleActivity(Clock::time_point now);
     void persistIfFinished();
     void notify(std::string title, std::string body) const;
@@ -172,6 +174,9 @@ private:
 
     ActivityTracker tracker_;
     bool trackingEnabled_ = true;
+    bool inputCounting_   = false;  // whether the source has been asked to count input events
+    bool haveForegroundKey_ = false;
+    std::size_t foregroundKey_ = 0;  // hash of the last foreground window, only to notice a change; never stored, never logged
     bool ambientSampled_  = false;
     Clock::time_point lastAmbient_{};
     Clock::time_point lastFlush_{};
