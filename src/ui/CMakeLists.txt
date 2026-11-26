@@ -35,6 +35,7 @@ qt_add_qml_module(focus_ui
     qml/Sheet.qml
     qml/Toast.qml
     qml/StartSheet.qml
+    qml/SettingsSheet.qml
     qml/CheckInSheet.qml
     qml/Header.qml
     qml/TaskRow.qml

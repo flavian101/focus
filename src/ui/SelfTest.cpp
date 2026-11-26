@@ -302,6 +302,46 @@ int runSelfTest(QApplication&, const QString& screenshotDir) {
     wait(1700);
     shot(window, screenshotDir, "9-activity");
 
+    // ---- correcting an app: click it, pick a category ------------------------------------
+    if (auto* page = window->findChild<QObject*>(QStringLiteral("activityPage"))) {
+        QMetaObject::invokeMethod(page, "expandApp", Q_ARG(QVariant, 4));  // a row far enough down to be a small app
+        wait(700);
+        shot(window, screenshotDir, "9c-activity-row-open");
+    }
+    const double distractionBefore = backend.activityDay().value(QStringLiteral("distractionMinutes")).toDouble();
+    backend.setAppCategory(QStringLiteral("explorer"), QStringLiteral("distraction"));
+    const double distractionAfter = backend.activityDay().value(QStringLiteral("distractionMinutes")).toDouble();
+    check(distractionAfter - distractionBefore >= 29.0, "marking an app as distraction re-labels today's recorded time");
+    bool foundRule = false;
+    for (const auto& v : backend.activityDay().value(QStringLiteral("apps")).toList()) {
+        const auto m = v.toMap();
+        if (m.value(QStringLiteral("name")).toString() == QLatin1String("explorer")) {
+            foundRule = m.value(QStringLiteral("rule")).toString() == QLatin1String("distraction");
+        }
+    }
+    check(foundRule, "the corrected app shows its correction");
+    backend.setAppCategory(QStringLiteral("explorer"), QString());   // reset the rule
+    wait(300);
+
+    // ---- profile and tracking modes -----------------------------------------------------------
+    backend.setProfile(QStringLiteral("  software engineering intern "), QStringLiteral("Mostly coding. The browser is for docs."));
+    check(backend.profile().value(QStringLiteral("role")).toString() == QLatin1String("software engineering intern"), "the profile is saved and trimmed");
+    check(!backend.setTrackingPolicy(QStringLiteral("work"), QStringLiteral("private"), 127, 17 * 60, 9 * 60), "work hours that end before they start are refused");
+    check(!backend.setTrackingPolicy(QStringLiteral("everything"), QStringLiteral("private"), 127, 9 * 60, 17 * 60), "an unknown mode is refused");
+    check(backend.setTrackingPolicy(QStringLiteral("work"), QStringLiteral("private"), 127, 9 * 60, 17 * 60), "a valid policy is accepted");
+    check(backend.trackingMode() == QLatin1String("work"), "at 12:40 on a work day the mode is work (full detail)");
+    check(backend.setTrackingPolicy(QStringLiteral("work"), QStringLiteral("private"), 127, 14 * 60, 17 * 60), "work hours can move");
+    check(backend.trackingMode() == QLatin1String("private"), "at 12:40 that is outside work hours, so only categories are kept");
+    check(backend.setTrackingPolicy(QStringLiteral("work"), QStringLiteral("off"), 127, 14 * 60, 17 * 60) && backend.trackingMode() == QLatin1String("off"),
+          "outside work hours can be switched off entirely");
+    backend.setTrackingPolicy(QStringLiteral("work"), QStringLiteral("private"), 31, 9 * 60, 17 * 60);  // back to the default
+
+    QMetaObject::invokeMethod(window, "openSettings");
+    wait(800);
+    shot(window, screenshotDir, "10-settings");
+    if (auto* sheet = window->findChild<QObject*>(QStringLiteral("settingsSheet"))) sheet->setProperty("open", false);
+    wait(400);
+
     backend.setTrackingEnabled(false);
     check(!backend.trackingEnabled(), "tracking can be paused");
     backend.setTrackingEnabled(true);

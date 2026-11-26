@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls.Basic
 import FocusUi
 
 // A modal panel that rises over a dimmed backdrop. Put content inside it; it sizes itself to fit.
@@ -34,12 +35,28 @@ Item {
         border.color: Theme.border
 
         MouseArea { anchors.fill: parent }  // clicks on the panel must not reach the backdrop
-        Item {
-            id: panel
+        // The content scrolls if the sheet is taller than the window allows.
+        Flickable {
+            id: flick
             x: 28
             y: 28
             width: parent.width - 56
-            height: childrenRect.height
+            height: parent.height - 56
+            contentWidth: width
+            contentHeight: panel.childrenRect.height
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            ScrollBar.vertical: ScrollBar {
+                policy: ScrollBar.AsNeeded
+                implicitWidth: 8
+                contentItem: Rectangle { implicitWidth: 6; radius: 3; color: Theme.textDim; opacity: 0.5 }
+                background: Item {}
+            }
+            Item {
+                id: panel
+                width: flick.width - 14   // room for the scrollbar, so it never covers the content
+                height: childrenRect.height
+            }
         }
     }
 }

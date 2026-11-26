@@ -73,6 +73,7 @@ FocusBackend::FocusBackend(const std::string& dbPath, std::unique_ptr<focus::Act
     refreshTasks();
     refreshWellness();
     refreshActivity();
+    refreshTracking();
 }
 
 // ------------------------------------------------------------------------------ properties
@@ -336,6 +337,66 @@ focus::LocalTime FocusBackend::localTime() const {
 void FocusBackend::setTrackingEnabled(bool enabled) {
     controller_->setTrackingEnabled(enabled);
     refreshActivity();
+    refreshTracking();
+}
+
+// ------------------------------------------------------------------ tracking modes and the profile
+
+bool FocusBackend::setTrackingPolicy(const QString& workMode, const QString& otherMode, int daysMask, int startMinute, int endMinute) {
+    const auto work  = focus::parseMode(workMode.toStdString());
+    const auto other = focus::parseMode(otherMode.toStdString());
+    if (!work || !other) return false;
+
+    focus::TrackingPolicy p;
+    p.duringWork = *work;
+    p.otherwise  = *other;
+    p.schedule.days        = static_cast<unsigned>(daysMask);
+    p.schedule.startMinute = startMinute;
+    p.schedule.endMinute   = endMinute;
+    const bool ok = controller_->setTrackingPolicy(p);
+    refreshTracking();
+    return ok;
+}
+
+void FocusBackend::setProfile(const QString& role, const QString& purpose) {
+    controller_->setProfile({role.toStdString(), purpose.toStdString()});
+    refreshTracking();
+}
+
+void FocusBackend::setAppCategory(const QString& app, const QString& category) {
+    if (category.isEmpty()) {
+        controller_->clearAppCategory(app.toStdString());
+    } else if (const auto c = focus::parseCategory(category.toStdString())) {
+        controller_->setAppCategory(app.toStdString(), *c, today_.toStdString());
+    }
+    refreshActivity();
+}
+
+void FocusBackend::refreshTracking() {
+    const auto mode = controller_->currentTrackingMode(localTime());
+    const auto name = focus::modeName(mode);
+    trackingMode_   = QString::fromUtf8(name.data(), static_cast<int>(name.size()));
+
+    const auto& p = controller_->trackingPolicy();
+    QVariantMap m;
+    auto modeText = [](focus::TrackingMode x) { const auto n = focus::modeName(x); return QString::fromUtf8(n.data(), static_cast<int>(n.size())); };
+    m[QStringLiteral("workMode")] = modeText(p.duringWork);
+    m[QStringLiteral("otherMode")] = modeText(p.otherwise);
+    m[QStringLiteral("daysMask")] = static_cast<int>(p.schedule.days);
+    QVariantList days;
+    for (int i = 0; i < 7; ++i) days.push_back((p.schedule.days & (1u << i)) != 0);
+    m[QStringLiteral("days")]        = days;
+    m[QStringLiteral("startMinute")] = p.schedule.startMinute;
+    m[QStringLiteral("endMinute")]   = p.schedule.endMinute;
+    m[QStringLiteral("startText")]   = QString::fromStdString(focus::clockText(p.schedule.startMinute));
+    m[QStringLiteral("endText")]     = QString::fromStdString(focus::clockText(p.schedule.endMinute));
+    trackingPolicy_ = m;
+
+    QVariantMap pr;
+    pr[QStringLiteral("role")]    = QString::fromStdString(controller_->profile().role);
+    pr[QStringLiteral("purpose")] = QString::fromStdString(controller_->profile().purpose);
+    profile_ = pr;
+    emit trackingChanged();
 }
 
 void FocusBackend::clearTodayActivity() {
@@ -379,7 +440,13 @@ void FocusBackend::refreshActivity() {
     for (const auto& a : d.topApps) {
         if (a.seconds < 30) continue;  // under half a minute is noise, not a row in a list
         QVariantMap am;
-        am[QStringLiteral("app")]      = QString::fromStdString(a.app);
+        const bool isPrivate = a.app.empty();   // recorded in private mode: category only, no app name
+        am[QStringLiteral("app")]      = isPrivate ? QStringLiteral("Private time") : QString::fromStdString(a.app);
+        am[QStringLiteral("name")]     = QString::fromStdString(a.app);   // the real key (empty when private)
+        am[QStringLiteral("private")]  = isPrivate;
+        const auto rule = controller_->appRules().find(a.app);
+        am[QStringLiteral("rule")]     = rule == controller_->appRules().end() ? QString()
+                                         : QString::fromUtf8(focus::categoryName(rule->second).data(), static_cast<int>(focus::categoryName(rule->second).size()));
         am[QStringLiteral("category")] = QString::fromUtf8(focus::categoryName(a.category).data(), static_cast<int>(focus::categoryName(a.category).size()));
         am[QStringLiteral("minutes")]  = a.seconds / 60.0;
         am[QStringLiteral("share")]    = a.seconds / top;  // 1.0 for the most used app: for drawing proportional bars
@@ -451,7 +518,10 @@ void FocusBackend::onTick() {
     } catch (const focus::StorageError& e) {
         emit errorOccurred(QString::fromUtf8(e.what()));
     }
-    if (tickCount_ % 30 == 0) refreshActivity();
+    if (tickCount_ % 30 == 0) {
+        refreshActivity();
+        refreshTracking();  // the mode follows the clock: work hours end, private time begins
+    }
     controller_->tickWellness(localTime(), now());  // water and meals run all day, session or not
     if (++tickCount_ % 15 == 0) refreshWellness();  // pace and meal states drift with the clock
 

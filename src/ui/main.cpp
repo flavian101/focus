@@ -94,6 +94,13 @@ int main(int argc, char* argv[]) {
         QObject::connect(&backend, &FocusBackend::notification, [&](const QString& title, const QString& body) {
             if (hasTray) tray.showMessage(title, body, QSystemTrayIcon::Information, 6000);
         });
+        QObject::connect(&backend, &FocusBackend::trackingChanged, [&] {
+            const QString mode = backend.trackingMode();
+            tray.setToolTip(QStringLiteral("Focus - tracking: ") + (mode == QLatin1String("work") ? QStringLiteral("full detail")
+                                                                  : mode == QLatin1String("private") ? QStringLiteral("category only")
+                                                                                                     : QStringLiteral("off")));
+        });
+        emit backend.trackingChanged();
         QObject::connect(&app, &QApplication::aboutToQuit, [&backend] { backend.shutdown(); });
 
         tray.setContextMenu(&menu);

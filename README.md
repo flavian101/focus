@@ -56,6 +56,15 @@ If your network blocks sqlite.org, install SQLite another way (e.g. vcpkg) and c
   often you switch apps. Time away from the keyboard is counted as away, and time the laptop slept
   is not counted at all. **Privacy:** only app names and categories are stored, on this computer, never
   window titles or what you type. You can pause tracking or delete today's data from the same page.
+- **Settings** (top right): pick an accent colour and theme, write a few words about you and what this
+  computer is for, and choose how much detail tracking keeps. *Work hours* (days and times you set) and
+  *outside work hours* each have a mode: **Full detail** keeps the app name (code, chrome), **Category
+  only** keeps just "40 minutes of distraction" and never which app, **Off** records nothing. The
+  default is full detail during work and category only outside it. The tray icon's tooltip shows the
+  mode that is active right now.
+- On the Activity tab you can **click an app to correct its category** ("this app is Focus"). The
+  correction applies from then on and re-labels today's recorded time. For a browser it only changes
+  the default, so an AI chat or a video feed in a tab is still recognised.
 - **Insights**: animated summary cards and a weekly chart, with recent sessions and AI use.
 - A live session screen with a progress ring and AI-budget tracker, a check-in sheet, a tray icon,
   and light/dark themes with a choice of accent colours.

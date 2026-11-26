@@ -8,6 +8,7 @@ Item {
     property string tab: "today"
     signal tabSelected(string name)
     signal startRequested()
+    signal settingsRequested()
 
     implicitHeight: 96
 
@@ -76,31 +77,10 @@ Item {
 
         Item { Layout.fillWidth: true }
 
-        Row {
-            visible: root.width > 1150
-            spacing: 8
-            Layout.alignment: Qt.AlignVCenter
-            Repeater {
-                model: ["#7C5CFF", "#3B82F6", "#14B8A6", "#F59E0B", "#F43F5E", "#A3E635"]
-                delegate: Item {
-                    required property string modelData
-                    width: 26; height: 26
-                    scale: swatchArea.containsMouse ? 1.18 : 1.0
-                    Behavior on scale { NumberAnimation { duration: Theme.fast } }
-                    Rectangle {
-                        anchors.fill: parent; radius: 13; color: modelData
-                        border.width: backend.accent.toLowerCase() === modelData.toLowerCase() ? 3 : 0
-                        border.color: Theme.text
-                    }
-                    MouseArea { id: swatchArea; anchors.fill: parent; hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor; onClicked: backend.accent = modelData }
-                }
-            }
-        }
         PillButton {
             Layout.alignment: Qt.AlignVCenter
-            text: backend.darkMode ? "Light" : "Dark"
-            onClicked: backend.darkMode = !backend.darkMode
+            text: "Settings"
+            onClicked: root.settingsRequested()
         }
         PillButton {
             Layout.alignment: Qt.AlignVCenter

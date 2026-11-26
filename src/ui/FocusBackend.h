@@ -48,6 +48,11 @@ class FocusBackend : public QObject {
     Q_PROPERTY(QVariantMap activityDay READ activityDay NOTIFY activityChanged)   // totals, hours[], apps[]
     Q_PROPERTY(bool trackingEnabled READ trackingEnabled NOTIFY activityChanged)
 
+    // --- tracking modes and the profile -------------------------------------------------
+    Q_PROPERTY(QString trackingMode READ trackingMode NOTIFY trackingChanged)     // work | private | off, right now
+    Q_PROPERTY(QVariantMap trackingPolicy READ trackingPolicy NOTIFY trackingChanged)
+    Q_PROPERTY(QVariantMap profile READ profile NOTIFY trackingChanged)           // role, purpose
+
     // --- appearance (saved between runs) ------------------------------------------------------
     Q_PROPERTY(bool darkMode READ darkMode WRITE setDarkMode NOTIFY appearanceChanged)
     Q_PROPERTY(QString accent READ accent WRITE setAccent NOTIFY appearanceChanged)
@@ -71,6 +76,9 @@ public:
     QVariantList week() const { return week_; }
     QVariantList recent() const { return recent_; }
 
+    QString trackingMode() const { return trackingMode_; }
+    QVariantMap trackingPolicy() const { return trackingPolicy_; }
+    QVariantMap profile() const { return profile_; }
     QVariantMap activityDay() const { return activityDay_; }
     bool trackingEnabled() const { return controller_->trackingEnabled(); }
     QVariantMap wellness() const { return wellness_; }
@@ -111,6 +119,13 @@ public:
     Q_INVOKABLE void setMeal(const QString& mealId, const QString& status);
     Q_INVOKABLE void refreshWellness();
 
+    // modes are "work", "private" or "off"; daysMask has bit 0 = Monday ... bit 6 = Sunday. Returns false if it does not make sense.
+    Q_INVOKABLE bool setTrackingPolicy(const QString& workMode, const QString& otherMode, int daysMask, int startMinute, int endMinute);
+    Q_INVOKABLE void setProfile(const QString& role, const QString& purpose);
+    // "This app is <category>": category is "focus", "neutral", "distraction" or "ai"; "" resets the correction.
+    Q_INVOKABLE void setAppCategory(const QString& app, const QString& category);
+    Q_INVOKABLE void refreshTracking();
+
     Q_INVOKABLE void setTrackingEnabled(bool enabled);
     Q_INVOKABLE void clearTodayActivity();
     Q_INVOKABLE void refreshActivity();
@@ -129,6 +144,7 @@ signals:
     void tasksChanged();
     void wellnessChanged();
     void activityChanged();
+    void trackingChanged();
     void appearanceChanged();
     void notification(const QString& title, const QString& body);
     void errorOccurred(const QString& message);
@@ -151,6 +167,9 @@ private:
     int tickCount_ = 0;
     QVariantMap wellness_;
     QVariantMap activityDay_;
+    QString trackingMode_ = QStringLiteral("work");
+    QVariantMap trackingPolicy_;
+    QVariantMap profile_;
 
     QString today_;
     QVariantList tasks_;

@@ -15,6 +15,8 @@ Item {
     onActiveChanged: if (active) backend.refreshActivity()
 
     readonly property var d: backend.activityDay
+    // used by the self-test to show an opened row
+    function expandApp(index) { var item = appList.itemAtIndex(index); if (item) item.open = true }
     property bool confirmDelete: false
 
     function minutesText(v) {
@@ -159,7 +161,7 @@ Item {
                 Txt {
                     anchors.right: parent.right; anchors.verticalCenter: appsTitle.verticalCenter
                     visible: appList.count > 0
-                    text: appList.count + (appList.count === 1 ? " app" : " apps"); dim: true; size: 12
+                    text: "Click an app to correct it  ·  " + appList.count + (appList.count === 1 ? " app" : " apps"); dim: true; size: 12
                 }
 
                 // A scrolling list: with dozens of apps it never spills out of its card.
@@ -190,14 +192,52 @@ Item {
                         required property var modelData
                         required property int index
                         property bool ready: false
+                        property bool open: false
+                        readonly property bool editable: !modelData.private
                         width: ListView.view.width - 14   // leave room for the scrollbar
-                        height: 38
+                        height: open ? 84 : 38
+                        Behavior on height { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
+                        clip: true
                         // rows grow in one after another, but never wait long: only the first dozen are staggered
                         Timer { interval: 300 + Math.min(appRow.index, 12) * 60; running: true; onTriggered: appRow.ready = true }
                         Rectangle { x: 0; y: 6; width: 10; height: 10; radius: 5
                                     color: Theme.categoryColor(appRow.modelData.category) }
                         Txt { x: 20; width: parent.width - 20 - mins.width - 8; text: appRow.modelData.app; size: 14; elide: Text.ElideRight }
                         Txt { id: mins; anchors.right: parent.right; text: root.minutesText(appRow.modelData.minutes); dim: true; size: 13 }
+                        Txt { visible: appRow.modelData.rule !== ""; anchors.right: mins.left; anchors.rightMargin: 8
+                              text: "corrected"; size: 11; color: Theme.accent }
+                        MouseArea { x: 0; y: 0; width: parent.width; height: 38; enabled: appRow.editable
+                                    cursorShape: Qt.PointingHandCursor; onClicked: appRow.open = !appRow.open }
+
+                        // "This app is ..." choices, shown when the row is opened
+                        Row {
+                            x: 20; y: 46; spacing: 6; opacity: appRow.open ? 1 : 0
+                            Behavior on opacity { NumberAnimation { duration: 200 } }
+                            Repeater {
+                                model: [{ key: "focus", label: "Focus" }, { key: "neutral", label: "Other" },
+                                        { key: "distraction", label: "Distraction" }, { key: "ai", label: "AI" }]
+                                delegate: Rectangle {
+                                    id: pick
+                                    required property var modelData
+                                    readonly property bool current: appRow.modelData.category === modelData.key
+                                    height: 26; width: pickText.implicitWidth + 22; radius: 13
+                                    color: current ? Qt.alpha(Theme.categoryColor(modelData.key), 0.25) : "transparent"
+                                    border.width: 1; border.color: current ? Theme.categoryColor(modelData.key) : Theme.border
+                                    Txt { id: pickText; anchors.centerIn: parent; text: pick.modelData.label; size: 12; strong: true
+                                          color: pick.current ? Theme.categoryColor(pick.modelData.key) : Theme.textDim }
+                                    MouseArea { anchors.fill: parent; enabled: appRow.open; cursorShape: Qt.PointingHandCursor
+                                                onClicked: backend.setAppCategory(appRow.modelData.name, pick.modelData.key) }
+                                }
+                            }
+                            Rectangle {
+                                visible: appRow.modelData.rule !== ""
+                                height: 26; width: resetText.implicitWidth + 22; radius: 13
+                                color: "transparent"; border.width: 1; border.color: Theme.border
+                                Txt { id: resetText; anchors.centerIn: parent; text: "Reset"; size: 12; dim: true }
+                                MouseArea { anchors.fill: parent; enabled: appRow.open; cursorShape: Qt.PointingHandCursor
+                                            onClicked: backend.setAppCategory(appRow.modelData.name, "") }
+                            }
+                        }
                         Rectangle {
                             x: 20; y: 26; height: 4; radius: 2; color: Qt.alpha(Theme.categoryColor(appRow.modelData.category), 0.85)
                             width: appRow.ready ? (parent.width - 20) * appRow.modelData.share : 0
@@ -215,8 +255,11 @@ Item {
             Txt {
                 Layout.fillWidth: true
                 wrapMode: Text.Wrap
-                text: (backend.trackingEnabled ? "Tracking is on. " : "Tracking is paused. ")
-                      + "Focus stores app names and categories on this computer only, never window titles or what you type."
+                text: (!backend.trackingEnabled ? "Tracking is paused. "
+                       : backend.trackingMode === "work" ? "Tracking: full detail (app names). "
+                       : backend.trackingMode === "private" ? "Tracking: category only right now, no app names. "
+                       : "Tracking is off right now by your schedule. ")
+                      + "Everything stays on this computer. Window titles and typing are never stored."
                 dim: true; size: 12
             }
             PillButton {

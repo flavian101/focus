@@ -19,6 +19,7 @@ ApplicationWindow {
     Binding { target: Theme; property: "dark"; value: backend.darkMode }
     Binding { target: Theme; property: "accent"; value: backend.accent }
 
+    function openSettings() { settingsSheet.open = true }
     function openStartSheet() { startSheet.reset(); startSheet.open = true }
     function openStartSheetFor(taskId, title, minutes) { startSheet.openFor(taskId, title, minutes) }
 
@@ -33,6 +34,7 @@ ApplicationWindow {
         Behavior on opacity { NumberAnimation { duration: Theme.normal } }
         onTabSelected: (name) => win.tab = name
         onStartRequested: win.openStartSheet()
+        onSettingsRequested: win.openSettings()
     }
 
     Item {
@@ -51,6 +53,7 @@ ApplicationWindow {
             active: backend.phase === "idle" && win.tab === "health"
         }
         ActivityPage {
+            objectName: "activityPage"
             anchors.fill: parent
             active: backend.phase === "idle" && win.tab === "activity"
         }
@@ -66,6 +69,7 @@ ApplicationWindow {
     }
 
     StartSheet { id: startSheet }
+    SettingsSheet { id: settingsSheet; objectName: "settingsSheet" }
     CheckInSheet { }
     Toast { id: toast }
 
