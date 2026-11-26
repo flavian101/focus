@@ -421,6 +421,17 @@ void FocusBackend::refreshActivity() {
     m[QStringLiteral("firstText")]          = minuteClock(d.firstActiveMinute);
     m[QStringLiteral("lastText")]           = minuteClock(d.lastActiveMinute);
 
+    // Engagement: how much of the time had real input. A day recorded before this existed says so, so the page
+    // can show a dash instead of claiming 0%.
+    m[QStringLiteral("hasEngagement")]      = d.hasEngagementData;
+    m[QStringLiteral("handsOnFocusPercent")] = d.engagedShare(ActivityCategory::Focus) * 100.0;
+    m[QStringLiteral("engagedMinutes")]     = d.engagedSeconds / 60.0;
+    m[QStringLiteral("foregroundChanges")]  = d.foregroundChanges;
+    m[QStringLiteral("scrolls")]            = d.scrollEvents;
+    m[QStringLiteral("keys")]               = d.keyEvents;
+    m[QStringLiteral("clicks")]             = d.clickEvents;
+    m[QStringLiteral("hasInputCounts")]     = (d.scrollEvents + d.keyEvents + d.clickEvents) > 0;
+
     QVariantList hours;
     for (const auto& h : d.hours) {
         QVariantMap hm;

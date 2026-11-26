@@ -19,6 +19,11 @@ Item {
     function expandApp(index) { var item = appList.itemAtIndex(index); if (item) item.open = true }
     property bool confirmDelete: false
 
+    // 35070 -> "35k", 2204 -> "2.2k": the cards are narrow
+    function compact(n) {
+        n = n || 0
+        return n >= 10000 ? Math.round(n / 1000) + "k" : n >= 1000 ? (n / 1000).toFixed(1) + "k" : n.toString()
+    }
     function minutesText(v) {
         v = v || 0
         return v >= 60 ? Math.floor(v / 60) + "h " + Math.round(v % 60) + "m" : Math.round(v) + "m"
@@ -53,14 +58,14 @@ Item {
                 title: "Longest focus block"; tint: Theme.accent
                 value: root.d.longestFocus !== undefined ? root.d.longestFocus : 0
                 formatter: function (v) { return root.minutesText(v) }
-                sub: "A short glance away does not break it"
+                sub: "Short glances do not break it"
             }
             StatCard {
                 Layout.fillWidth: true; Layout.preferredHeight: 124; enterDelay: 180
                 title: "App switches per hour"; tint: Theme.warn
                 value: root.d.switchesPerHour !== undefined ? root.d.switchesPerHour : 0
                 formatter: function (v) { return v.toFixed(1) }
-                sub: (root.d.switches !== undefined ? root.d.switches : 0) + " switches today. Fewer is deeper."
+                sub: (root.d.switches !== undefined ? root.d.switches : 0) + " switches today"
             }
             StatCard {
                 Layout.fillWidth: true; Layout.preferredHeight: 124; enterDelay: 270
@@ -68,6 +73,16 @@ Item {
                 value: root.d.aiMinutes !== undefined ? root.d.aiMinutes : 0
                 formatter: function (v) { return root.minutesText(v) }
                 sub: root.minutesText(root.d.distractionMinutes) + " in distractions"
+            }
+            StatCard {
+                // How much of the focus time had real keyboard or mouse input: "VS Code was open" vs "I was working in it".
+                Layout.fillWidth: true; Layout.preferredHeight: 124; enterDelay: 360
+                title: "Hands-on focus"; tint: Theme.good
+                value: root.d.handsOnFocusPercent !== undefined ? root.d.handsOnFocusPercent : 0
+                formatter: function (v) { return root.d.hasEngagement ? Math.round(v) + "%" : "–" }
+                sub: !root.d.hasEngagement ? "Not recorded for this day"
+                     : root.d.hasInputCounts ? root.compact(root.d.keys) + " keys · " + root.compact(root.d.scrolls) + " scrolls"
+                     : "of focus time had input"
             }
         }
 
@@ -256,10 +271,11 @@ Item {
                 Layout.fillWidth: true
                 wrapMode: Text.Wrap
                 text: (!backend.trackingEnabled ? "Tracking is paused. "
+                       : backend.trackingMode === "detailed" ? "Tracking: full detail plus scroll, key and click counts. "
                        : backend.trackingMode === "work" ? "Tracking: full detail (app names). "
                        : backend.trackingMode === "private" ? "Tracking: category only right now, no app names. "
                        : "Tracking is off right now by your schedule. ")
-                      + "Everything stays on this computer. Window titles and typing are never stored."
+                      + "Everything stays on this computer. Window titles and typed text are never stored."
                 dim: true; size: 12
             }
             PillButton {

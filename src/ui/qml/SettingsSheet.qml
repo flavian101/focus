@@ -33,7 +33,7 @@ Sheet {
     onOpenChanged: if (open) load()
 
     readonly property var dayNames: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-    readonly property var modes: [{ key: "work", label: "Full detail" }, { key: "private", label: "Category only" }, { key: "off", label: "Off" }]
+    readonly property var modes: [{ key: "detailed", label: "Full + counts" }, { key: "work", label: "Full detail" }, { key: "private", label: "Category only" }, { key: "off", label: "Off" }]
 
     Column {
         width: parent.width
@@ -133,7 +133,7 @@ Sheet {
         }
         Txt {
             width: parent.width; wrapMode: Text.Wrap; size: 12; dim: true
-            text: "Full detail keeps the app name (code, chrome). Category only keeps just \"40 minutes of distraction\", never which app. Everything stays on this computer; window titles and typing are never stored."
+            text: "Full detail keeps the app name (code, chrome). Category only keeps just \"40 minutes of distraction\", never which app. Full + counts also counts scrolls, key presses and clicks, as plain numbers: never which keys, never what you type. Every level except Off also notes how much of the time you were at the keyboard or mouse. Everything stays on this computer; window titles and typed text are never stored."
         }
 
         Txt { visible: root.error !== ""; text: root.error; color: Theme.bad; size: 13 }

@@ -124,7 +124,16 @@ void seedActivity(focus::Database& db) {
     std::vector<focus::ActivityBucket> buckets;
     auto seg = [&](int fromHour, int fromMin, int toHour, int toMin, C category, const char* app) {
         for (int m = fromHour * 60 + fromMin; m < toHour * 60 + toMin; ++m) {
-            buckets.push_back({today, m, category, category == C::Away ? "" : app, 60});
+            focus::ActivityBucket b{today, m, category, category == C::Away ? "" : app, 60};
+            // How the keyboard and mouse were used: typing while focused, mostly scrolling while distracted.
+            switch (category) {
+                case C::Focus:       b.activeSeconds = 50; b.keyEvents = 110; b.clickEvents = 3;  b.scrollEvents = 2;  break;
+                case C::AiAssistant: b.activeSeconds = 40; b.keyEvents = 45;  b.clickEvents = 2;  b.scrollEvents = 8;  break;
+                case C::Distraction: b.activeSeconds = 20; b.keyEvents = 1;   b.clickEvents = 1;  b.scrollEvents = 24; b.switches = 2; break;
+                case C::Neutral:     b.activeSeconds = 30; b.keyEvents = 20;  b.clickEvents = 4;  b.scrollEvents = 5;  break;
+                case C::Away:        break;
+            }
+            buckets.push_back(b);
         }
     };
     seg(8, 40, 9, 5,    C::Neutral,     "outlook");
@@ -293,6 +302,11 @@ int runSelfTest(QApplication&, const QString& screenshotDir) {
     check(day.value(QStringLiteral("longestFocus")).toInt() >= 60, "there is a long focus block");
     check(day.value(QStringLiteral("aiMinutes")).toDouble() > 25, "AI time is counted");
     check(day.value(QStringLiteral("awayMinutes")).toDouble() >= 44, "the lunch break shows as away");
+    check(day.value(QStringLiteral("hasEngagement")).toBool(), "the day has engagement data");
+    const double handsOn = day.value(QStringLiteral("handsOnFocusPercent")).toDouble();
+    check(handsOn > 80 && handsOn < 90, "hands-on focus is the share of focus time with input (50 of 60 s)");
+    check(day.value(QStringLiteral("hasInputCounts")).toBool() && day.value(QStringLiteral("keys")).toInt() > 10000,
+          "key presses are counted as numbers");
     check(day.value(QStringLiteral("hours")).toList().size() == 24, "24 hour columns");
     check(day.value(QStringLiteral("apps")).toList().size() > 20, "dozens of apps are kept (the list scrolls)");
     check(!day.value(QStringLiteral("apps")).toList().isEmpty() &&
@@ -334,6 +348,9 @@ int runSelfTest(QApplication&, const QString& screenshotDir) {
     check(backend.trackingMode() == QLatin1String("private"), "at 12:40 that is outside work hours, so only categories are kept");
     check(backend.setTrackingPolicy(QStringLiteral("work"), QStringLiteral("off"), 127, 14 * 60, 17 * 60) && backend.trackingMode() == QLatin1String("off"),
           "outside work hours can be switched off entirely");
+    check(backend.setTrackingPolicy(QStringLiteral("detailed"), QStringLiteral("private"), 127, 9 * 60, 17 * 60) &&
+              backend.trackingMode() == QLatin1String("detailed"),
+          "the highest level (full detail plus input counts) can be chosen");
     backend.setTrackingPolicy(QStringLiteral("work"), QStringLiteral("private"), 31, 9 * 60, 17 * 60);  // back to the default
 
     QMetaObject::invokeMethod(window, "openSettings");

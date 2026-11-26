@@ -45,11 +45,11 @@ class FocusBackend : public QObject {
     Q_PROPERTY(QVariantMap wellness READ wellness NOTIFY wellnessChanged)  // glasses, goal, pace, meals[]
 
     // --- all-day activity ----------------------------------------------------------------
-    Q_PROPERTY(QVariantMap activityDay READ activityDay NOTIFY activityChanged)   // totals, hours[], apps[]
+    Q_PROPERTY(QVariantMap activityDay READ activityDay NOTIFY activityChanged)   // totals, engagement, hours[], apps[]
     Q_PROPERTY(bool trackingEnabled READ trackingEnabled NOTIFY activityChanged)
 
     // --- tracking modes and the profile -------------------------------------------------
-    Q_PROPERTY(QString trackingMode READ trackingMode NOTIFY trackingChanged)     // work | private | off, right now
+    Q_PROPERTY(QString trackingMode READ trackingMode NOTIFY trackingChanged)     // detailed | work | private | off, right now
     Q_PROPERTY(QVariantMap trackingPolicy READ trackingPolicy NOTIFY trackingChanged)
     Q_PROPERTY(QVariantMap profile READ profile NOTIFY trackingChanged)           // role, purpose
 
