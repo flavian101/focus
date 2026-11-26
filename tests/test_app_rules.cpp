@@ -80,10 +80,11 @@ TEST_CASE("recategorize: a browser's AI time is left alone when only neutral tim
 TEST_CASE("upgrading a v5 database adds app rules and keeps activity") {
     auto db = Database::open(":memory:");
     migrate(db, 5);
-    ActivityRepository(db).addSeconds({{"2026-11-23", 600, Cat::Focus, "code", 60}});
+    // Raw SQL, because ActivityRepository now writes the v7 engagement columns that a v5 database does not have yet.
+    db.exec("INSERT INTO activity_minutes (day, minute_of_day, category, app, seconds) VALUES ('2026-11-23', 600, 'focus', 'code', 60);");
     CHECK(db.userVersion() == 5);
     migrate(db);
-    CHECK(db.userVersion() == 6);
+    CHECK(db.userVersion() == 7);
     CHECK(ActivityRepository(db).forDay("2026-11-23").size() == 1);
     CHECK_NOTHROW(AppRuleRepository(db).set("code", Cat::Focus, 1));
 }

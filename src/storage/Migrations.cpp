@@ -9,7 +9,7 @@ namespace {
 
 // Rule: never edit a step that has shipped. To change the schema, append a new step.
 // Step N takes the database from version N to version N+1.
-constexpr std::array<const char*, 6> kSteps = {
+constexpr std::array<const char*, 7> kSteps = {
     // v0 -> v1
     R"sql(
     CREATE TABLE sessions (
@@ -110,6 +110,15 @@ constexpr std::array<const char*, 6> kSteps = {
         category   TEXT    NOT NULL CHECK (category IN ('focus', 'neutral', 'distraction', 'ai')),
         created_at INTEGER NOT NULL
     );
+    )sql",
+    // v6 -> v7: engagement per minute. Numbers only: seconds with input, foreground changes, and (Detailed
+    // mode only) scroll / key / click counts. ADD COLUMN with DEFAULT 0 keeps every existing row valid.
+    R"sql(
+    ALTER TABLE activity_minutes ADD COLUMN active_s  INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE activity_minutes ADD COLUMN switches  INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE activity_minutes ADD COLUMN scroll_n  INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE activity_minutes ADD COLUMN key_n     INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE activity_minutes ADD COLUMN click_n   INTEGER NOT NULL DEFAULT 0;
     )sql",
 };
 

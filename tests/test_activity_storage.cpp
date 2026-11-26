@@ -86,7 +86,97 @@ TEST_CASE("upgrading a v4 database adds the activity table and keeps tasks") {
     CHECK(db.userVersion() == 4);
 
     migrate(db);
-    CHECK(db.userVersion() == 6);
+    CHECK(db.userVersion() == 7);
     CHECK(TaskRepository(db).forDay("2026-11-23").size() == 1);
     CHECK_NOTHROW(ActivityRepository(db).addSeconds({bucket("2026-11-23", 600, Cat::Focus, "code", 30)}));
+}
+
+namespace {
+ActivityBucket engaged(const char* day, int minute, Cat c, const char* app, int seconds, int active, int switches = 0,
+                       int scroll = 0, int keys = 0, int clicks = 0) {
+    ActivityBucket b = bucket(day, minute, c, app, seconds);
+    b.activeSeconds  = active;
+    b.switches       = switches;
+    b.scrollEvents   = scroll;
+    b.keyEvents      = keys;
+    b.clickEvents    = clicks;
+    return b;
+}
+}  // namespace
+
+TEST_CASE("activity: engagement numbers round-trip") {
+    auto db = freshDb();
+    ActivityRepository repo(db);
+    repo.addSeconds({engaged("2026-11-23", 600, Cat::Focus, "code", 50, 35, 2, 4, 120, 6)});
+
+    auto day = repo.forDay("2026-11-23");
+    REQUIRE(day.size() == 1);
+    CHECK(day[0].seconds == 50);
+    CHECK(day[0].activeSeconds == 35);
+    CHECK(day[0].switches == 2);
+    CHECK(day[0].scrollEvents == 4);
+    CHECK(day[0].keyEvents == 120);
+    CHECK(day[0].clickEvents == 6);
+}
+
+TEST_CASE("activity: saving the same minute again adds the engagement too") {
+    auto db = freshDb();
+    ActivityRepository repo(db);
+    repo.addSeconds({engaged("2026-11-23", 600, Cat::Focus, "code", 30, 20, 1, 2, 10, 1)});
+    repo.addSeconds({engaged("2026-11-23", 600, Cat::Focus, "code", 25, 5, 3, 1, 5, 2)});
+
+    auto day = repo.forDay("2026-11-23");
+    REQUIRE(day.size() == 1);
+    CHECK(day[0].seconds == 55);
+    CHECK(day[0].activeSeconds == 25);
+    CHECK(day[0].switches == 4);
+    CHECK(day[0].scrollEvents == 3);
+    CHECK(day[0].keyEvents == 15);
+    CHECK(day[0].clickEvents == 3);
+}
+
+TEST_CASE("activity: input time can never exceed the time in the bucket, and counts are never negative") {
+    auto db = freshDb();
+    ActivityRepository repo(db);
+    repo.addSeconds({engaged("2026-11-23", 600, Cat::Focus, "code", 10, 999, -4, -1, -1, -1),
+                     engaged("2026-11-23", 601, Cat::Focus, "code", 10, -5)});
+
+    auto day = repo.forDay("2026-11-23");
+    REQUIRE(day.size() == 2);
+    CHECK(day[0].activeSeconds == 10);   // clamped to the bucket's own seconds
+    CHECK(day[0].switches == 0);
+    CHECK(day[0].scrollEvents == 0);
+    CHECK(day[0].keyEvents == 0);
+    CHECK(day[0].clickEvents == 0);
+    CHECK(day[1].activeSeconds == 0);
+}
+
+TEST_CASE("activity: re-labelling an app keeps its engagement") {
+    auto db = freshDb();
+    ActivityRepository repo(db);
+    repo.addSeconds({engaged("2026-11-23", 600, Cat::Neutral, "figma", 40, 30, 1, 5, 80, 3)});
+    repo.recategorize("2026-11-23", "figma", std::nullopt, Cat::Focus);
+
+    auto day = repo.forDay("2026-11-23");
+    REQUIRE(day.size() == 1);
+    CHECK(day[0].category == Cat::Focus);
+    CHECK(day[0].activeSeconds == 30);
+    CHECK(day[0].keyEvents == 80);
+    CHECK(day[0].clickEvents == 3);
+}
+
+TEST_CASE("upgrading a v6 database keeps existing activity, with no engagement recorded for it") {
+    auto db = Database::open(":memory:");
+    migrate(db, 6);
+    db.exec("INSERT INTO activity_minutes (day, minute_of_day, category, app, seconds) VALUES ('2026-11-23', 600, 'focus', 'code', 45);");
+    CHECK(db.userVersion() == 6);
+
+    migrate(db);
+    CHECK(db.userVersion() == 7);
+    auto day = ActivityRepository(db).forDay("2026-11-23");
+    REQUIRE(day.size() == 1);
+    CHECK(day[0].seconds == 45);          // history survived
+    CHECK(day[0].activeSeconds == 0);     // and nobody pretends to know how engaged that time was
+    CHECK(day[0].switches == 0);
+    CHECK(day[0].scrollEvents == 0);
 }

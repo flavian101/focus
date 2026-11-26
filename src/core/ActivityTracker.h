@@ -17,6 +17,24 @@ struct ActivityBucket {
     ActivityCategory category = ActivityCategory::Neutral;
     std::string app;       // "code", "chrome", ... ("" for Away)
     int seconds = 0;
+
+    // Engagement: how the person was using the keyboard and mouse during these seconds. Only numbers.
+    // Which keys, what was typed and where the pointer was are never looked at, let alone kept.
+    int activeSeconds = 0;  // seconds with keyboard/mouse input (never more than `seconds`)
+    int switches      = 0;  // times the foreground window or its title changed
+    int scrollEvents  = 0;  // wheel ticks; only counted in Detailed mode
+    int keyEvents     = 0;  // key presses; only counted in Detailed mode
+    int clickEvents   = 0;  // mouse button presses; only counted in Detailed mode
+
+    // Adds another slice of the same minute, category and app into this one.
+    void accumulate(const ActivityBucket& other) {
+        seconds += other.seconds;
+        activeSeconds += other.activeSeconds;
+        switches += other.switches;
+        scrollEvents += other.scrollEvents;
+        keyEvents += other.keyEvents;
+        clickEvents += other.clickEvents;
+    }
 };
 
 // Turns "what was in front at this moment" samples into per-minute buckets.
