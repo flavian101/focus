@@ -37,9 +37,22 @@ struct ActivityBucket {
     }
 };
 
+// What happened with the keyboard and mouse during the interval that ENDS at a sample (that is, since the
+// previous sample). Like seconds, it is credited to the state that was held during that interval, so a
+// switch from code to chrome is filed under code, the app you were in when it happened.
+// Only numbers: nothing here says which keys were pressed or where the pointer went.
+struct SampleSignals {
+    bool input        = false;  // any keyboard/mouse input during the interval
+    int switches      = 0;      // foreground window or title changes
+    int scrollEvents  = 0;      // wheel ticks (Detailed mode only; otherwise 0)
+    int keyEvents     = 0;      // key presses (Detailed mode only; otherwise 0)
+    int clickEvents   = 0;      // mouse button presses (Detailed mode only; otherwise 0)
+};
+
 // Turns "what was in front at this moment" samples into per-minute buckets.
 //
 //  * Sample and hold: the time since the previous sample is credited to the PREVIOUS state.
+//    Engagement signals follow the same rule (see SampleSignals).
 //  * A gap longer than maxGap (laptop asleep, screen locked, app frozen) is not credited to anything.
 //  * Buckets are held in memory for a few minutes before being handed out. That is what lets
 //    recordAway() correct the past: when idle time crosses the "away" threshold, the whole idle
@@ -52,7 +65,8 @@ public:
 
     explicit ActivityTracker(std::chrono::seconds maxGap = std::chrono::seconds(15)) : maxGap_(maxGap) {}
 
-    void record(Clock::time_point now, const LocalTime& local, ActivityCategory category, const std::string& app);
+    void record(Clock::time_point now, const LocalTime& local, ActivityCategory category, const std::string& app,
+                const SampleSignals& engagement = {});
     // The user has had no input for idleFor. Credits Away, and on the first such sample of an
     // absence moves that idle stretch out of the buckets that were wrongly crediting an app.
     void recordAway(Clock::time_point now, const LocalTime& local, std::chrono::seconds idleFor);
@@ -78,8 +92,8 @@ private:
         std::string app;
     };
 
-    void creditPrevious(Clock::time_point now);
-    void add(const std::string& day, int minute, ActivityCategory category, const std::string& app, int seconds);
+    void creditPrevious(Clock::time_point now, const SampleSignals& engagement);
+    void add(const ActivityBucket& slice);  // merges into the bucket for the same minute, category and app
 
     std::chrono::seconds maxGap_;
     std::optional<Sample> prev_;

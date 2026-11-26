@@ -5,33 +5,46 @@
 
 namespace focus {
 
-void ActivityTracker::add(const std::string& day, int minute, ActivityCategory category, const std::string& app, int seconds) {
-    if (seconds <= 0) return;
+void ActivityTracker::add(const ActivityBucket& slice) {
+    if (slice.seconds <= 0) return;
     // Search from the back: the bucket we want is almost always one of the most recent.
     for (auto it = buckets_.rbegin(); it != buckets_.rend(); ++it) {
-        if (it->minuteOfDay == minute && it->category == category && it->day == day && it->app == app) {
-            it->seconds += seconds;
+        if (it->minuteOfDay == slice.minuteOfDay && it->category == slice.category && it->day == slice.day && it->app == slice.app) {
+            it->accumulate(slice);
             return;
         }
     }
-    buckets_.push_back({day, minute, category, app, seconds});
+    buckets_.push_back(slice);
 }
 
-void ActivityTracker::creditPrevious(Clock::time_point now) {
+void ActivityTracker::creditPrevious(Clock::time_point now, const SampleSignals& engagement) {
     if (!prev_) return;
-    const auto elapsed = std::min<Clock::duration>(now - prev_->time, maxGap_);  // a long gap is not credited
+    const auto gap     = now - prev_->time;
+    const auto elapsed = std::min<Clock::duration>(gap, maxGap_);  // a long gap is not credited
     const int seconds  = static_cast<int>(std::lround(std::chrono::duration<double>(elapsed).count()));
-    add(prev_->local.day, prev_->local.minuteOfDay, prev_->category, prev_->app, seconds);
+
+    ActivityBucket slice{prev_->local.day, prev_->local.minuteOfDay, prev_->category, prev_->app, seconds};
+    // Engagement only describes a normal interval. After a long gap (sleep, lock screen, a frozen app) there is
+    // nothing trustworthy to say, and Away is by definition time without input.
+    if (gap <= maxGap_ && prev_->category != ActivityCategory::Away) {
+        slice.activeSeconds = engagement.input ? seconds : 0;
+        slice.switches      = engagement.switches;
+        slice.scrollEvents  = engagement.scrollEvents;
+        slice.keyEvents     = engagement.keyEvents;
+        slice.clickEvents   = engagement.clickEvents;
+    }
+    add(slice);
 }
 
-void ActivityTracker::record(Clock::time_point now, const LocalTime& local, ActivityCategory category, const std::string& app) {
-    creditPrevious(now);
+void ActivityTracker::record(Clock::time_point now, const LocalTime& local, ActivityCategory category, const std::string& app,
+                             const SampleSignals& engagement) {
+    creditPrevious(now, engagement);
     prev_ = Sample{now, local, category, category == ActivityCategory::Away ? std::string() : app};
 }
 
 void ActivityTracker::recordAway(Clock::time_point now, const LocalTime& local, std::chrono::seconds idleFor) {
     const bool alreadyAway = prev_ && prev_->category == ActivityCategory::Away;
-    creditPrevious(now);
+    creditPrevious(now, SampleSignals{});
 
     if (!alreadyAway) {
         // Without input the foreground cannot have changed, so the idle stretch was credited to
@@ -43,12 +56,13 @@ void ActivityTracker::recordAway(Clock::time_point now, const LocalTime& local, 
             if (it->category == ActivityCategory::Away) continue;
             const int take = std::min(remaining, it->seconds);
             it->seconds -= take;
-            remaining   -= take;
+            it->activeSeconds = std::min(it->activeSeconds, it->seconds);  // input cannot cover more time than is left
+            remaining -= take;
             moves.push_back({it->day, it->minuteOfDay, take});
         }
         buckets_.erase(std::remove_if(buckets_.begin(), buckets_.end(), [](const ActivityBucket& b) { return b.seconds <= 0; }),
                        buckets_.end());
-        for (const auto& m : moves) add(m.day, m.minute, ActivityCategory::Away, std::string(), m.seconds);
+        for (const auto& m : moves) add(ActivityBucket{m.day, m.minute, ActivityCategory::Away, std::string(), m.seconds});
     }
     prev_ = Sample{now, local, ActivityCategory::Away, std::string()};
 }
@@ -87,7 +101,10 @@ void ActivityTracker::recategorize(const std::string& day, const std::string& ap
         b.seconds = 0;
     }
     buckets_.erase(std::remove_if(buckets_.begin(), buckets_.end(), [](const ActivityBucket& b) { return b.seconds <= 0; }), buckets_.end());
-    for (const auto& m : moved) add(m.day, m.minuteOfDay, to, m.app, m.seconds);  // merges into an existing bucket if there is one
+    for (auto& m : moved) {  // engagement moves with the time; add() merges into an existing bucket if there is one
+        m.category = to;
+        add(m);
+    }
 }
 
 void ActivityTracker::discardDay(const std::string& day) {

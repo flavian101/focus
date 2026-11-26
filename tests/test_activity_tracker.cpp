@@ -17,6 +17,12 @@ int secondsFor(const std::vector<ActivityBucket>& b, Cat c, const std::string& a
     for (const auto& x : b) if (x.category == c && (app.empty() || x.app == app)) total += x.seconds;
     return total;
 }
+
+int activeFor(const std::vector<ActivityBucket>& b, Cat c, const std::string& app = "") {
+    int total = 0;
+    for (const auto& x : b) if (x.category == c && (app.empty() || x.app == app)) total += x.activeSeconds;
+    return total;
+}
 }  // namespace
 
 TEST_CASE("tracker: time is credited to the previous state (sample and hold)") {
@@ -146,4 +152,110 @@ TEST_CASE("tracker: recategorizing also relabels the sample that is still being 
     auto b = t.takeAll();
     CHECK(secondsFor(b, Cat::Focus, "figma") == 5);
     CHECK(secondsFor(b, Cat::Neutral, "figma") == 0);
+}
+
+// ---------------------------------------------------------------------------------- engagement
+
+TEST_CASE("tracker: input during an interval is credited to the state that was held, like seconds") {
+    ActivityTracker t;
+    t.record(t0, at(600), Cat::Focus, "code");
+    t.record(t0 + 5s, at(600), Cat::Focus, "code", SampleSignals{.input = true});   // typed during these 5 s
+    t.record(t0 + 10s, at(600), Cat::Focus, "code", SampleSignals{.input = false}); // nothing during these 5 s
+    auto b = t.takeAll();
+    CHECK(secondsFor(b, Cat::Focus, "code") == 10);
+    CHECK(activeFor(b, Cat::Focus, "code") == 5);
+}
+
+TEST_CASE("tracker: with no signals nothing is engaged, so older callers behave as before") {
+    ActivityTracker t;
+    t.record(t0, at(600), Cat::Focus, "code");
+    t.record(t0 + 5s, at(600), Cat::Focus, "code");
+    auto b = t.takeAll();
+    REQUIRE(b.size() == 1);
+    CHECK(b[0].seconds == 5);
+    CHECK(b[0].activeSeconds == 0);
+    CHECK(b[0].switches == 0);
+    CHECK(b[0].scrollEvents == 0);
+}
+
+TEST_CASE("tracker: a switch and the input counts are filed under the app you were in when they happened") {
+    ActivityTracker t;
+    t.record(t0, at(600), Cat::Focus, "code");
+    SampleSignals s;
+    s.input = true; s.switches = 1; s.scrollEvents = 7; s.keyEvents = 40; s.clickEvents = 2;
+    t.record(t0 + 5s, at(600), Cat::Distraction, "chrome", s);   // you left code for chrome during that interval
+    auto b = t.takeAll();
+
+    REQUIRE(b.size() == 1);                       // chrome has not been credited yet: it is the held sample
+    CHECK(b[0].app == "code");
+    CHECK(b[0].switches == 1);
+    CHECK(b[0].scrollEvents == 7);
+    CHECK(b[0].keyEvents == 40);
+    CHECK(b[0].clickEvents == 2);
+}
+
+TEST_CASE("tracker: counts add up within a minute") {
+    ActivityTracker t;
+    t.record(t0, at(600), Cat::Focus, "code");
+    t.record(t0 + 5s, at(600), Cat::Focus, "code", SampleSignals{.input = true, .scrollEvents = 2, .keyEvents = 10});
+    t.record(t0 + 10s, at(600), Cat::Focus, "code", SampleSignals{.input = true, .scrollEvents = 3, .keyEvents = 5});
+    t.record(t0 + 15s, at(600), Cat::Focus, "code");
+    auto b = t.takeAll();
+    REQUIRE(b.size() == 1);
+    CHECK(b[0].scrollEvents == 5);
+    CHECK(b[0].keyEvents == 15);
+    CHECK(b[0].activeSeconds == 10);
+    CHECK(b[0].seconds == 15);
+}
+
+TEST_CASE("tracker: after a long gap nothing about engagement is believed") {
+    ActivityTracker t;
+    t.record(t0, at(600), Cat::Focus, "code");
+    t.record(t0 + 2h, at(720), Cat::Focus, "code", SampleSignals{.input = true, .switches = 3, .scrollEvents = 9});
+    auto b = t.takeAll();
+    REQUIRE(b.size() == 1);
+    CHECK(b[0].seconds == 15);          // the usual cap
+    CHECK(b[0].activeSeconds == 0);     // the laptop slept: no one was typing
+    CHECK(b[0].switches == 0);
+    CHECK(b[0].scrollEvents == 0);
+}
+
+TEST_CASE("tracker: Away is never engaged, whatever the caller says") {
+    ActivityTracker t;
+    t.record(t0, at(600), Cat::Away, "");
+    t.record(t0 + 5s, at(600), Cat::Away, "", SampleSignals{.input = true, .keyEvents = 5});
+    auto b = t.takeAll();
+    REQUIRE(b.size() == 1);
+    CHECK(b[0].seconds == 5);
+    CHECK(b[0].activeSeconds == 0);
+    CHECK(b[0].keyEvents == 0);
+}
+
+TEST_CASE("tracker: taking an idle stretch back from an app also takes back its input time") {
+    ActivityTracker t;
+    // ten minutes with input in every interval
+    for (int i = 0; i <= 120; ++i) {
+        t.record(t0 + std::chrono::seconds(i * 5), at(600 + i * 5 / 60), Cat::Focus, "code", SampleSignals{.input = true});
+    }
+    t.recordAway(t0 + 605s, at(610), 300s);
+
+    auto b = t.takeAll();
+    CHECK(secondsFor(b, Cat::Focus, "code") == 305);
+    CHECK(activeFor(b, Cat::Focus, "code") == 305);   // what is left is the part where there really was input
+    CHECK(activeFor(b, Cat::Away) == 0);
+    for (const auto& x : b) CHECK(x.activeSeconds <= x.seconds);   // input never covers more time than exists
+}
+
+TEST_CASE("tracker: re-labelling an app keeps its engagement with the time") {
+    ActivityTracker t;
+    t.record(t0, at(600), Cat::Neutral, "figma");
+    t.record(t0 + 5s, at(600), Cat::Neutral, "figma", SampleSignals{.input = true, .scrollEvents = 3});
+    t.record(t0 + 10s, at(600), Cat::Neutral, "figma", SampleSignals{.input = false});
+    t.recategorize("2026-11-23", "figma", std::nullopt, Cat::Focus);
+    auto b = t.takeAll();
+    REQUIRE(b.size() == 1);
+    CHECK(b[0].category == Cat::Focus);
+    CHECK(b[0].seconds == 10);
+    CHECK(b[0].activeSeconds == 5);
+    CHECK(b[0].scrollEvents == 3);
 }
