@@ -15,7 +15,8 @@ Each session is a small contract with yourself:
 4. Check in again. Everything is saved locally, and `focus stats` shows trends.
 
 Everything stays on your machine (`%LOCALAPPDATA%\Focus\focus.db`). Window titles are used to
-decide a category and are then discarded; only category totals are stored.
+decide a category and are then discarded; what is stored is category totals, app names (depending on
+the tracking level) and plain numbers about how the keyboard and mouse were used.
 
 ## Build (Windows)
 
@@ -54,13 +55,20 @@ If your network blocks sqlite.org, install SQLite another way (e.g. vcpkg) and c
   by minute, which *category* (focus / AI / other / distraction / away) and which *app name* was in
   front. You see an hour-by-hour stacked chart, your most used apps, your longest focus block, and how
   often you switch apps. Time away from the keyboard is counted as away, and time the laptop slept
-  is not counted at all. **Privacy:** only app names and categories are stored, on this computer, never
-  window titles or what you type. You can pause tracking or delete today's data from the same page.
+  is not counted at all. **Hands-on focus** is the share of your focus time that had real keyboard or
+  mouse input, which tells "the editor was open" apart from "I was working in it"; it also notes how
+  often the window or tab changed. **Privacy:** what is stored, on this computer, is app names,
+  categories and numbers: seconds with input, how often the window changed and, in the highest
+  level only, how many scrolls, key presses and clicks. Never window titles, never *which* keys, never
+  what you type (the counters decide from the kind of event alone and do not read the key or the
+  pointer position). You can pause tracking or delete today's data from the same page.
 - **Settings** (top right): pick an accent colour and theme, write a few words about you and what this
   computer is for, and choose how much detail tracking keeps. *Work hours* (days and times you set) and
-  *outside work hours* each have a mode: **Full detail** keeps the app name (code, chrome), **Category
-  only** keeps just "40 minutes of distraction" and never which app, **Off** records nothing. The
-  default is full detail during work and category only outside it. The tray icon's tooltip shows the
+  *outside work hours* each have a mode: **Full + counts** is Full detail plus the scroll, key and
+  click counts (the only level that listens for them at all; nothing is installed in any other level),
+  **Full detail** keeps the app name (code, chrome), **Category only** keeps just "40 minutes of
+  distraction" and never which app, **Off** records nothing. The default is full detail during work
+  and category only outside it. The tray icon's tooltip shows the
   mode that is active right now.
 - On the Activity tab you can **click an app to correct its category** ("this app is Focus"). The
   correction applies from then on and re-labels today's recorded time. For a browser it only changes
