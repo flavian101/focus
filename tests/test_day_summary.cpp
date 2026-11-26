@@ -89,3 +89,67 @@ TEST_CASE("day: top apps are merged, ordered and capped") {
     CHECK(s.topApps[1].app == "code");
     CHECK(s.topApps[1].seconds == 780);
 }
+
+// ---------------------------------------------------------------------------------- engagement
+
+namespace {
+ActivityBucket slice(int minute, Cat c, const char* app, int seconds, int active, int switches = 0, int scroll = 0, int keys = 0,
+                     int clicks = 0) {
+    ActivityBucket b{"2026-11-23", minute, c, c == Cat::Away ? "" : app, seconds};
+    b.activeSeconds = active;
+    b.switches      = switches;
+    b.scrollEvents  = scroll;
+    b.keyEvents     = keys;
+    b.clickEvents   = clicks;
+    return b;
+}
+}  // namespace
+
+TEST_CASE("day: engaged time is totalled per category, and Away is left out") {
+    std::vector<ActivityBucket> b = {
+        slice(at(9), Cat::Focus, "code", 60, 50),
+        slice(at(9, 1), Cat::Focus, "code", 60, 10),
+        slice(at(9, 2), Cat::Distraction, "chrome", 60, 5),
+        slice(at(9, 3), Cat::Away, "", 60, 0),
+    };
+    auto s = summarizeDay(b);
+    CHECK(s.engagedSecondsByCategory[static_cast<std::size_t>(Cat::Focus)] == 60);
+    CHECK(s.engagedSecondsByCategory[static_cast<std::size_t>(Cat::Distraction)] == 5);
+    CHECK(s.engagedSeconds == 65);
+    CHECK(s.engagedShare(Cat::Focus) == doctest::Approx(0.5));            // 60 of 120 s
+    CHECK(s.engagedShare(Cat::Distraction) == doctest::Approx(5.0 / 60.0));
+    CHECK(s.engagedShare(Cat::Away) == 0.0);
+    CHECK(s.engagedShare(Cat::AiAssistant) == 0.0);                        // no time in it: 0, not a division by zero
+}
+
+TEST_CASE("day: foreground changes and input counts are summed") {
+    std::vector<ActivityBucket> b = {
+        slice(at(9), Cat::Focus, "code", 60, 40, 2, 5, 100, 4),
+        slice(at(9, 1), Cat::Distraction, "chrome", 60, 30, 9, 80, 0, 12),
+    };
+    auto s = summarizeDay(b);
+    CHECK(s.foregroundChanges == 11);
+    CHECK(s.scrollEvents == 85);
+    CHECK(s.keyEvents == 100);
+    CHECK(s.clickEvents == 16);
+}
+
+TEST_CASE("day: a day recorded before engagement existed says it has no engagement data") {
+    std::vector<ActivityBucket> b;
+    minutes(b, at(9), 30, Cat::Focus, "code");   // the old helper: no engagement fields set
+    auto s = summarizeDay(b);
+    CHECK_FALSE(s.hasEngagementData);
+    CHECK(s.engagedSeconds == 0);                 // unknown, and the flag is how a screen tells that from "idle"
+}
+
+TEST_CASE("day: any engagement number at all means the day has engagement data") {
+    CHECK(summarizeDay({slice(at(9), Cat::Focus, "code", 60, 20)}).hasEngagementData);
+    CHECK(summarizeDay({slice(at(9), Cat::Focus, "code", 60, 0, 3)}).hasEngagementData);
+    CHECK(summarizeDay({slice(at(9), Cat::Focus, "code", 60, 0, 0, 0, 0, 1)}).hasEngagementData);
+}
+
+TEST_CASE("day: a corrupt engaged value cannot exceed the time it belongs to") {
+    auto s = summarizeDay({slice(at(9), Cat::Focus, "code", 30, 500)});
+    CHECK(s.engagedSeconds == 30);
+    CHECK(s.engagedShare(Cat::Focus) == doctest::Approx(1.0));
+}

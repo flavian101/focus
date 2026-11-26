@@ -29,6 +29,14 @@ DaySummary summarizeDay(const std::vector<ActivityBucket>& buckets, std::size_t 
         if (b.category == ActivityCategory::Away) continue;
 
         s.activeSeconds += b.seconds;
+        const int engaged = std::clamp(b.activeSeconds, 0, b.seconds);
+        s.engagedSecondsByCategory[idx(b.category)] += engaged;
+        s.engagedSeconds += engaged;
+        s.foregroundChanges += std::max(b.switches, 0);
+        s.scrollEvents += std::max(b.scrollEvents, 0);
+        s.keyEvents += std::max(b.keyEvents, 0);
+        s.clickEvents += std::max(b.clickEvents, 0);
+        if (engaged > 0 || b.switches > 0 || b.scrollEvents > 0 || b.keyEvents > 0 || b.clickEvents > 0) s.hasEngagementData = true;
         auto& m = minutes[b.minuteOfDay];
         m.activeByApp[b.app] += b.seconds;
         if (b.category == ActivityCategory::Focus) m.focusSeconds += b.seconds;
