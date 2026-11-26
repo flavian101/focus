@@ -4,6 +4,7 @@
 
 #include "services/Reminders.h"
 #include "storage/ActivityRepository.h"
+#include "storage/AppRuleRepository.h"
 #include "storage/CheckInRepository.h"
 #include "storage/SessionRepository.h"
 #include "storage/SettingsRepository.h"
@@ -31,6 +32,71 @@ SessionController::SessionController(Database& db, ActivitySource& source, Confi
     }
     wellness_.setWaterGoal(SettingsRepository(db_).getInt("water_goal", config_.water.goalGlasses));
     trackingEnabled_ = SettingsRepository(db_).getInt("tracking", 1) != 0;
+    loadTrackingSettings();
+}
+
+// ------------------------------------------------------------------- tracking modes, profile, rules
+
+void SessionController::loadTrackingSettings() {
+    SettingsRepository settings(db_);
+    policy_ = config_.tracking;
+    if (const auto m = settings.get("track_work"))  policy_.duringWork = parseMode(*m).value_or(policy_.duringWork);
+    if (const auto m = settings.get("track_other")) policy_.otherwise  = parseMode(*m).value_or(policy_.otherwise);
+    policy_.schedule.days        = static_cast<unsigned>(settings.getInt("work_days", static_cast<int>(policy_.schedule.days)));
+    policy_.schedule.startMinute = settings.getInt("work_start", policy_.schedule.startMinute);
+    policy_.schedule.endMinute   = settings.getInt("work_end", policy_.schedule.endMinute);
+    if (!valid(policy_)) policy_ = config_.tracking;  // a damaged setting must not switch tracking off by accident
+
+    profile_.role    = settings.get("profile_role").value_or("");
+    profile_.purpose = settings.get("profile_purpose").value_or("");
+
+    appRules_ = AppRuleRepository(db_).all();
+    classifier_.setOverrides(appRules_);
+}
+
+TrackingMode SessionController::currentTrackingMode(const LocalTime& local) const {
+    return trackingEnabled_ ? policy_.modeAt(local) : TrackingMode::Off;
+}
+
+bool SessionController::setTrackingPolicy(const TrackingPolicy& policy) {
+    if (!valid(policy)) return false;
+    policy_ = policy;
+    SettingsRepository s(db_);
+    s.set("track_work", std::string(modeName(policy.duringWork)));
+    s.set("track_other", std::string(modeName(policy.otherwise)));
+    s.setInt("work_days", static_cast<int>(policy.schedule.days));
+    s.setInt("work_start", policy.schedule.startMinute);
+    s.setInt("work_end", policy.schedule.endMinute);
+    return true;
+}
+
+void SessionController::setProfile(UserProfile profile) {
+    profile_ = cleaned(std::move(profile));
+    SettingsRepository s(db_);
+    s.set("profile_role", profile_.role);
+    s.set("profile_purpose", profile_.purpose);
+}
+
+void SessionController::setAppCategory(const std::string& appName, ActivityCategory category, const std::string& day) {
+    const std::string app = normalizedProcessName(appName);
+    if (app.empty() || category == ActivityCategory::Away) return;
+
+    AppRuleRepository(db_).set(app, category, unixNow());
+    appRules_[app] = category;
+    classifier_.setOverrides(appRules_);
+
+    // Re-label what was already recorded today. For a browser only the "no opinion" time moves,
+    // so the AI chats and video feeds inside it keep their own labels.
+    const std::optional<ActivityCategory> onlyFrom = isBrowserProcess(app) ? std::optional(ActivityCategory::Neutral) : std::nullopt;
+    tracker_.recategorize(day, app, onlyFrom, category);
+    ActivityRepository(db_).recategorize(day, app, onlyFrom, category);
+}
+
+void SessionController::clearAppCategory(const std::string& appName) {
+    const std::string app = normalizedProcessName(appName);
+    AppRuleRepository(db_).remove(app);
+    appRules_.erase(app);
+    classifier_.setOverrides(appRules_);  // from now on; history keeps the label it was recorded with
 }
 
 bool SessionController::start(SessionPlan plan, CheckIn before, Clock::time_point now) {
@@ -166,7 +232,12 @@ void SessionController::skipAfterCheckIn() { awaitingCheckIn_ = false; }
 // ------------------------------------------------------------------------------ all-day activity
 
 void SessionController::trackActivity(const LocalTime& local, Clock::time_point now) {
-    if (!trackingEnabled_) return;
+    const TrackingMode mode = currentTrackingMode(local);
+    if (mode == TrackingMode::Off) {
+        if (!tracker_.pending().empty()) flushActivity();  // keep what was recorded before the mode switched off
+        tracker_.forget();                                // and do not credit the time tracking is off
+        return;
+    }
 
     if (!ambientSampled_ || now - lastAmbient_ >= config_.ambientSampleInterval) {
         ambientSampled_ = true;
@@ -182,7 +253,8 @@ void SessionController::trackActivity(const LocalTime& local, Clock::time_point 
                 category = classifier_.classify(*window);
                 if (!window->processName.empty()) app = normalizedProcessName(window->processName);  // never the title
             }
-            tracker_.record(now, local, category, app);
+            // Private mode keeps the category (so "40 min of distraction" is still known) but not which app.
+            tracker_.record(now, local, category, mode == TrackingMode::Private ? std::string() : app);
         }
     }
 

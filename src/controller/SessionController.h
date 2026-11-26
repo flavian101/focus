@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -14,6 +15,7 @@
 #include "core/DaySummary.h"
 #include "core/DayPlan.h"
 #include "core/Task.h"
+#include "core/Tracking.h"
 #include "core/Wellness.h"
 #include "core/Scheduler.h"
 #include "core/SessionManager.h"
@@ -125,7 +127,22 @@ public:
     // Call about once a second. It samples every few seconds and saves finished minutes every minute.
     void trackActivity(const LocalTime& local, Clock::time_point now);
     void flushActivity();  // save everything still buffered: call when the app quits
-    bool trackingEnabled() const { return trackingEnabled_; }
+    bool trackingEnabled() const { return trackingEnabled_; }  // the master pause switch
+
+    // How much detail is kept right now: the pause switch wins (Off), otherwise the policy decides by the clock.
+    TrackingMode currentTrackingMode(const LocalTime& local) const;
+    const TrackingPolicy& trackingPolicy() const { return policy_; }
+    bool setTrackingPolicy(const TrackingPolicy& policy);  // false (and unchanged) if it does not make sense; saved otherwise
+
+    // Free text about the user, kept on this computer. Gives later features context.
+    const UserProfile& profile() const { return profile_; }
+    void setProfile(UserProfile profile);
+
+    // "This app is <category>". Applies from now on and re-labels today's recorded time.
+    // `appName` may be "Code.exe" or "code". Setting a category of Away is ignored.
+    void setAppCategory(const std::string& appName, ActivityCategory category, const std::string& day);
+    void clearAppCategory(const std::string& appName);
+    const std::map<std::string, ActivityCategory>& appRules() const { return appRules_; }
     void setTrackingEnabled(bool enabled);  // saved; pausing does not credit the time it was off
     DaySummary daySummary(const std::string& day);  // what is saved plus what is still buffered
     void clearActivity(const std::string& day);
@@ -139,6 +156,7 @@ public:
 
 private:
     void onSessionEvent(const SessionEvent& event);
+    void loadTrackingSettings();
     void sampleActivity(Clock::time_point now);
     void persistIfFinished();
     void notify(std::string title, std::string body) const;
@@ -147,6 +165,10 @@ private:
     ActivitySource& source_;
     Configuration config_;
     NotifyFn notify_;
+
+    TrackingPolicy policy_;
+    UserProfile profile_;
+    std::map<std::string, ActivityCategory> appRules_;
 
     ActivityTracker tracker_;
     bool trackingEnabled_ = true;

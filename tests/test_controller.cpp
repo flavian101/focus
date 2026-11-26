@@ -441,3 +441,126 @@ TEST_CASE("activity: a day's data can be deleted, buffered minutes included") {
     CHECK(rig.controller.daySummary("2026-11-23").activeSeconds == 0);
     CHECK(ActivityRepository(rig.db).forDay("2026-11-23").empty());
 }
+
+// ---------------------------------------------------------------- tracking modes, profile, rules
+
+namespace {
+// Records 5 minutes of Code.exe at the given day/time.
+void trackAt(Rig& rig, const char* day, int minute, std::chrono::seconds& clock) {
+    for (int i = 0; i < 60; ++i) {
+        rig.controller.trackActivity(LocalTime{day, minute + (i * 5) / 60}, t0 + clock);
+        clock += 5s;
+    }
+}
+bool hasApp(const DaySummary& d, const std::string& app) {
+    for (const auto& a : d.topApps) if (a.app == app) return true;
+    return false;
+}
+}  // namespace
+
+TEST_CASE("modes: during work hours the app name is kept") {
+    Rig rig;  // default policy: Work Monday-Friday 09:00-17:00
+    rig.source.window = ForegroundWindow{"Code.exe", "x"};
+    std::chrono::seconds clock{0};
+    trackAt(rig, "2026-11-25", 10 * 60, clock);  // a Wednesday morning
+    auto day = rig.controller.daySummary("2026-11-25");
+    CHECK(hasApp(day, "code"));
+    CHECK(rig.controller.currentTrackingMode(LocalTime{"2026-11-25", 10 * 60}) == TrackingMode::Work);
+}
+
+TEST_CASE("modes: outside work hours only the category is kept, never the app") {
+    Rig rig;
+    rig.source.window = ForegroundWindow{"Code.exe", "x"};
+    std::chrono::seconds clock{0};
+    trackAt(rig, "2026-11-25", 22 * 60, clock);  // a Wednesday night
+    auto day = rig.controller.daySummary("2026-11-25");
+    CHECK(secondsIn(day, ActivityCategory::Focus) > 0);   // the time is known...
+    CHECK_FALSE(hasApp(day, "code"));                      // ...but not which app
+    for (const auto& a : day.topApps) CHECK(a.app.empty());
+    CHECK(rig.controller.currentTrackingMode(LocalTime{"2026-11-25", 22 * 60}) == TrackingMode::Private);
+}
+
+TEST_CASE("modes: Off records nothing, keeps what was already recorded, and does not credit the gap") {
+    Rig rig;
+    TrackingPolicy p;
+    p.otherwise = TrackingMode::Off;
+    REQUIRE(rig.controller.setTrackingPolicy(p));
+
+    std::chrono::seconds clock{0};
+    trackAt(rig, "2026-11-25", 16 * 60, clock);                 // work hours: recorded
+    const auto before = rig.controller.daySummary("2026-11-25").activeSeconds;
+    trackAt(rig, "2026-11-25", 20 * 60, clock);                 // evening: Off
+    CHECK(rig.controller.daySummary("2026-11-25").activeSeconds == before);
+    CHECK(ActivityRepository(rig.db).forDay("2026-11-25").size() > 0);   // the earlier time was saved, not lost
+}
+
+TEST_CASE("modes: the pause switch beats the schedule") {
+    Rig rig;
+    rig.controller.setTrackingEnabled(false);
+    CHECK(rig.controller.currentTrackingMode(LocalTime{"2026-11-25", 10 * 60}) == TrackingMode::Off);
+}
+
+TEST_CASE("modes: the policy and profile are saved, validated and survive a restart") {
+    Rig rig;
+    TrackingPolicy p;
+    p.duringWork = TrackingMode::Work;
+    p.otherwise  = TrackingMode::Off;
+    p.schedule.days = 0b0111111;   // Saturday counts too
+    p.schedule.startMinute = 8 * 60;
+    p.schedule.endMinute   = 18 * 60;
+    REQUIRE(rig.controller.setTrackingPolicy(p));
+
+    TrackingPolicy bad = p;
+    bad.schedule.startMinute = 19 * 60;   // starts after it ends
+    CHECK_FALSE(rig.controller.setTrackingPolicy(bad));
+    CHECK(rig.controller.trackingPolicy().schedule.startMinute == 8 * 60);  // unchanged
+
+    rig.controller.setProfile({"  intern  ", "Mostly coding."});
+    SessionController reopened(rig.db, rig.source, Configuration::defaults());
+    CHECK(reopened.trackingPolicy().otherwise == TrackingMode::Off);
+    CHECK(reopened.trackingPolicy().schedule.days == 0b0111111);
+    CHECK(reopened.trackingPolicy().schedule.endMinute == 18 * 60);
+    CHECK(reopened.profile().role == "intern");
+    CHECK(reopened.profile().purpose == "Mostly coding.");
+}
+
+TEST_CASE("rules: a user override changes how the app is classified from now on, and today's recorded time") {
+    Rig rig;
+    rig.source.window = ForegroundWindow{"Figma.exe", "Design"};   // no built-in opinion: Neutral
+    std::chrono::seconds clock{0};
+    trackAt(rig, "2026-11-25", 10 * 60, clock);
+    CHECK(secondsIn(rig.controller.daySummary("2026-11-25"), ActivityCategory::Neutral) > 0);
+
+    rig.controller.setAppCategory("Figma.exe", ActivityCategory::Focus, "2026-11-25");
+    auto day = rig.controller.daySummary("2026-11-25");
+    CHECK(secondsIn(day, ActivityCategory::Neutral) == 0);          // today's time was re-labelled
+    CHECK(secondsIn(day, ActivityCategory::Focus) > 0);
+
+    trackAt(rig, "2026-11-25", 11 * 60, clock);                      // and new time uses the rule
+    CHECK(secondsIn(rig.controller.daySummary("2026-11-25"), ActivityCategory::Neutral) == 0);
+
+    SessionController reopened(rig.db, rig.source, Configuration::defaults());
+    CHECK(reopened.appRules().at("figma") == ActivityCategory::Focus);   // saved
+
+    rig.controller.clearAppCategory("figma");
+    CHECK(rig.controller.appRules().empty());
+}
+
+TEST_CASE("rules: marking a browser as focus does not hide an AI chat in a tab") {
+    Rig rig;
+    rig.controller.setAppCategory("chrome.exe", ActivityCategory::Focus, "2026-11-25");
+    std::chrono::seconds clock{0};
+    rig.source.window = ForegroundWindow{"chrome.exe", "Docs - Google Chrome"};
+    trackAt(rig, "2026-11-25", 10 * 60, clock);
+    rig.source.window = ForegroundWindow{"chrome.exe", "Claude - Google Chrome"};
+    trackAt(rig, "2026-11-25", 10 * 60 + 5, clock);
+    auto day = rig.controller.daySummary("2026-11-25");
+    CHECK(secondsIn(day, ActivityCategory::Focus) > 0);
+    CHECK(secondsIn(day, ActivityCategory::AiAssistant) > 0);
+}
+
+TEST_CASE("rules: away cannot be assigned to an app") {
+    Rig rig;
+    rig.controller.setAppCategory("steam", ActivityCategory::Away, "2026-11-25");
+    CHECK(rig.controller.appRules().empty());
+}
