@@ -7,6 +7,7 @@ add_library(focus_platform STATIC
   SystemTray.cpp
   Hotkeys.cpp
   IdleDetection.cpp
+  InputCounter.cpp
   WindowsActivitySource.cpp
 )
 target_link_libraries(focus_platform PUBLIC focus_core PRIVATE user32 shell32 ole32)

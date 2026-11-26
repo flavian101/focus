@@ -9,4 +9,11 @@ std::optional<ForegroundWindow> WindowsActivitySource::foreground() { return que
 
 std::chrono::seconds WindowsActivitySource::idleFor() { return idleDuration(); }
 
+void WindowsActivitySource::setInputCounting(bool enabled) {
+    if (enabled) counter_.start();  // if Windows refuses, the counts simply stay at zero
+    else counter_.stop();
+}
+
+InputCounts WindowsActivitySource::takeInputCounts() { return counter_.take(); }
+
 }  // namespace focus::win
