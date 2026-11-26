@@ -254,7 +254,7 @@ void SessionController::trackActivity(const LocalTime& local, Clock::time_point 
                 if (!window->processName.empty()) app = normalizedProcessName(window->processName);  // never the title
             }
             // Private mode keeps the category (so "40 min of distraction" is still known) but not which app.
-            tracker_.record(now, local, category, mode == TrackingMode::Private ? std::string() : app);
+            tracker_.record(now, local, category, keepsAppName(mode) ? app : std::string());
         }
     }
 

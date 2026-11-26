@@ -68,7 +68,7 @@ TEST_CASE("a policy must make sense") {
 }
 
 TEST_CASE("mode names round-trip") {
-    for (auto m : {TrackingMode::Off, TrackingMode::Private, TrackingMode::Work}) CHECK(parseMode(modeName(m)) == m);
+    for (auto m : {TrackingMode::Off, TrackingMode::Private, TrackingMode::Work, TrackingMode::Detailed}) CHECK(parseMode(modeName(m)) == m);
     CHECK_FALSE(parseMode("everything").has_value());
 }
 
@@ -77,4 +77,20 @@ TEST_CASE("profile text is trimmed and limited") {
     CHECK(p.role == "student developer");
     CHECK(p.purpose.size() == 240);
     CHECK(cleaned({"   ", ""}).role.empty());
+}
+
+TEST_CASE("modes: each level keeps strictly more than the one below it") {
+    CHECK_FALSE(keepsCategory(TrackingMode::Off));
+    CHECK_FALSE(keepsEngagement(TrackingMode::Off));
+
+    CHECK(keepsCategory(TrackingMode::Private));
+    CHECK(keepsEngagement(TrackingMode::Private));
+    CHECK_FALSE(keepsAppName(TrackingMode::Private));
+    CHECK_FALSE(keepsInputCounts(TrackingMode::Private));
+
+    CHECK(keepsAppName(TrackingMode::Work));
+    CHECK_FALSE(keepsInputCounts(TrackingMode::Work));  // counting scrolls and keys is opt-in, at the top level only
+
+    CHECK(keepsAppName(TrackingMode::Detailed));
+    CHECK(keepsInputCounts(TrackingMode::Detailed));
 }
